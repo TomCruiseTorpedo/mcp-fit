@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# env / secrets — never commit (history goes public at the reveal)
+.env
+.env.*
+!.env.example
+
+# logs / coverage / os
+*.log
+coverage/
+.DS_Store
+
+# agent / runtime scratch
+.pi/
+*.tmp
+bun.lock
+.beads/
+CLAUDE.local.md
+.cline/
+BEADS.md
