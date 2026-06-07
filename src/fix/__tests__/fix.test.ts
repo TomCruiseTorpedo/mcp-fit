@@ -376,7 +376,8 @@ describe('computeDelta', () => {
     // param-strictness improved significantly
     const paramAxis = delta.axes.find((a) => a.axis === 'param-strictness')!;
     expect(paramAxis.delta).toBeGreaterThan(0);
-    expect(paramAxis.after).toBeGreaterThan(paramAxis.before);
+    // param-strictness is a deterministic axis → never null.
+    expect(paramAxis.after!).toBeGreaterThan(paramAxis.before!);
 
     // Overall score improved
     expect(delta.scoreDelta).toBeGreaterThan(0);
@@ -591,8 +592,8 @@ describe('full pipeline: strawman red → green via rewrite + revalidate', () =>
     expect(countErrors(lintAfter)).toBe(0);
 
     // param-strictness improved
-    expect(lintAfter.axisScores['param-strictness'].score).toBeGreaterThan(
-      lintBefore.axisScores['param-strictness'].score,
+    expect(lintAfter.axisScores['param-strictness'].score!).toBeGreaterThan(
+      lintBefore.axisScores['param-strictness'].score!,
     );
 
     // Material improvement confirmed

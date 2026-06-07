@@ -12,7 +12,7 @@
  */
 
 import type { AxisName, AxisScore, Finding, FindingSeverity, LineageCategory, McpTool, ToolReport } from '../types.js';
-import { AXIS_NAMES } from '../types.js';
+import { AXIS_NAMES, DETERMINISTIC_AXES } from '../types.js';
 import { ALL_RULES } from './rules.js';
 
 // ---------------------------------------------------------------------------
@@ -87,11 +87,15 @@ function weightedAggregate(scores: Readonly<Record<AxisName, AxisScore>>): numbe
   let weightedSum = 0;
   let totalWeight = 0;
   for (const axis of AXIS_NAMES) {
+    const { score } = scores[axis];
+    // The deterministic badge only counts axes static lint can actually
+    // assess; eval-only axes (null score) are excluded, not credited a 10.
+    if (score === null || !DETERMINISTIC_AXES.has(axis)) continue;
     const weight = AXIS_WEIGHTS[axis];
-    weightedSum += scores[axis].score * weight;
+    weightedSum += score * weight;
     totalWeight += weight;
   }
-  return Math.round((weightedSum / totalWeight) * 10) / 10;
+  return totalWeight === 0 ? 0 : Math.round((weightedSum / totalWeight) * 10) / 10;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,10 +160,14 @@ export function lint(tools: readonly McpTool[]): LintResult {
   const axisScores = {} as Record<AxisName, AxisScore>;
   for (const axis of AXIS_NAMES) {
     const findings = byAxis[axis];
+    const assessable = DETERMINISTIC_AXES.has(axis);
     axisScores[axis] = {
-      score: axisScore(findings),
+      // Eval-only axes are not statically gradable → null deterministic score
+      // (populated later by --eval), so the badge is never inflated to a 10
+      // for an axis static lint cannot actually measure.
+      score: assessable ? axisScore(findings) : null,
       lineage: AXIS_LINEAGE[axis],
-      kind: 'deterministic',
+      kind: assessable ? 'deterministic' : 'eval',
       findings,
     };
   }

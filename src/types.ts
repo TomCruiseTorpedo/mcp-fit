@@ -64,6 +64,19 @@ export const AXIS_NAMES: readonly AxisName[] = [
 ] as const;
 
 /**
+ * Axes the deterministic static lint can meaningfully assess. Axes NOT listed
+ * here are eval-only: their quality is behavioural (output shape, error
+ * helpfulness, tool-selection confusion at runtime) and cannot be graded
+ * statically. Eval-only axes are excluded from the deterministic aggregate and
+ * carry a null deterministic `score` until `--eval` populates them — so the
+ * badge never claims a verdict it did not measure.
+ */
+export const DETERMINISTIC_AXES: ReadonlySet<AxisName> = new Set<AxisName>([
+  'namespacing',
+  'param-strictness',
+]);
+
+/**
  * RubricRefine provider-side contract category each axis traces to.
  *
  * | Axis                        | Lineage          |
@@ -121,7 +134,8 @@ export interface Finding {
  * - `variance`: required when `kind === 'eval'`; used to guard before/after claims.
  */
 export interface AxisScore {
-  score: number;
+  /** 1–10 ordinal, or null when the axis is eval-only and no eval has run. */
+  score: number | null;
   lineage: LineageCategory;
   kind: ScoreKind;
   findings: Finding[];

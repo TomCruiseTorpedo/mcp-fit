@@ -167,11 +167,16 @@ describe('scoreLintOnly', () => {
     expect(scorecard.aggregate.lintScore).toBeGreaterThan(0);
     expect(scorecard.aggregate.weighted).toBe(scorecard.aggregate.lintScore);
 
-    // All axes must be deterministic
+    // Lint-only: statically-assessable axes are deterministic with a numeric
+    // score; behavioural axes are eval-only (null score, kind 'eval').
     for (const axis of Object.values(scorecard.axes)) {
-      expect(axis.kind).toBe('deterministic');
-      expect(axis.score).toBeGreaterThanOrEqual(1);
-      expect(axis.score).toBeLessThanOrEqual(10);
+      if (axis.score === null) {
+        expect(axis.kind).toBe('eval');
+      } else {
+        expect(axis.kind).toBe('deterministic');
+        expect(axis.score).toBeGreaterThanOrEqual(1);
+        expect(axis.score).toBeLessThanOrEqual(10);
+      }
       expect(axis.variance).toBeUndefined();
     }
   });
@@ -330,7 +335,8 @@ describe('score() — with eval traces (stochastic path)', () => {
     expect(rubricResults).toHaveLength(0);
     expect(scorecard.aggregate.evalScore).toBeUndefined();
     for (const axis of Object.values(scorecard.axes)) {
-      expect(axis.kind).toBe('deterministic');
+      // Eval-only axes stay 'eval' (null score) even with no eval traces.
+      expect(axis.kind).toBe(axis.score === null ? 'eval' : 'deterministic');
     }
   });
 });
@@ -395,7 +401,8 @@ describe('scorecard shape', () => {
     for (const axis of Object.values(scorecard.axes)) {
       expect(typeof axis.lineage).toBe('string');
       expect(typeof axis.kind).toBe('string');
-      expect(typeof axis.score).toBe('number');
+      // score is a number for deterministic axes, null for eval-only axes.
+      expect(axis.score === null || typeof axis.score === 'number').toBe(true);
       expect(Array.isArray(axis.findings)).toBe(true);
     }
   });

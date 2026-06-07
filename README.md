@@ -29,7 +29,7 @@ node dist/cli.js scan \
   -- fixtures/strawman-server/node_modules/.bin/tsx fixtures/strawman-server/server.ts
 ```
 
-Expected output (lint-only; structural anti-patterns surface under `param-strictness`):
+Expected output (lint-only — the deterministic badge scores only the axes static lint can verify; behavioural axes are eval-only):
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -38,17 +38,30 @@ Expected output (lint-only; structural anti-patterns surface under `param-strict
 │  Axis                             Score   Grade Findings   │
 ├────────────────────────────────────────────────────────────┤
 │  namespacing                      9  /10  A     0err 1warn │
-│  tool-selection-confusion         10 /10  A     clean      │
+│  tool-selection-confusion         —  /10  ·     eval-only  │
 │  param-strictness                 1  /10  F     7err 0warn │
-│  output-leanness                  10 /10  A     clean      │
-│  error-helpfulness                10 /10  A     clean      │
+│  output-leanness                  —  /10  ·     eval-only  │
+│  error-helpfulness                —  /10  ·     eval-only  │
 ├────────────────────────────────────────────────────────────┤
-│  LINT SCORE (deterministic)   8.5 / 10                     │
-│  WEIGHTED AGGREGATE           8.5 / 10  [grade: B]         │
+│  LINT SCORE (deterministic)   5.6 / 10                     │
+│  WEIGHTED AGGREGATE           5.6 / 10  [grade: C]         │
 └────────────────────────────────────────────────────────────┘
 ```
 
-> See `sample-artifacts/` for a pre-generated `compat.json` and `evals.jsonl` from this exact run.
+The `—` axes are **eval-only**: static lint cannot grade runtime output shape, error quality, or tool-selection confusion, so the deterministic badge does not claim a verdict on them. Run `scan --eval` (needs `ANTHROPIC_API_KEY`) to score them stochastically.
+
+### Keyless red→green (no API key)
+
+`fixtures/strawman-fixed-server` is the strawman with clean contracts. Scan both and compare the deterministic LINT SCORE — a reproducible before/after with no LLM call:
+
+```bash
+# bad: 5.6 / 10  (param-strictness F)
+node bin/mcp-fit scan -- fixtures/strawman-server/node_modules/.bin/tsx fixtures/strawman-server/server.ts
+# fixed: 10 / 10  (A)
+node bin/mcp-fit scan -- fixtures/strawman-fixed-server/node_modules/.bin/tsx fixtures/strawman-fixed-server/server.ts
+```
+
+> See `sample-artifacts/` for a pre-generated `compat.json` and `evals.jsonl` from the strawman run.
 
 ### Auto-fix mode
 

@@ -88,10 +88,10 @@
       "additionalProperties": false,
       "properties": {
         "score": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "minimum": 1,
           "maximum": 10,
-          "description": "Ordinal 1–10 agent-usability score for this axis."
+          "description": "Ordinal 1–10 deterministic score, or null for eval-only axes (not statically assessable; populated by --eval)."
         },
         "lineage": {
           "type": "string",

@@ -138,11 +138,13 @@ function buildAxisScores(
     const lintFindings: Finding[] = lintAxisScore.findings;
 
     if (!hasEval) {
-      // Lint-only mode: pure deterministic
+      // Lint-only mode: preserve the engine's per-axis kind — eval-only axes
+      // stay 'eval' with a null score (no deterministic verdict), so the badge
+      // never claims a score it did not measure.
       axisScores[axis] = {
         score: lintAxisScore.score,
         lineage: AXIS_LINEAGE[axis],
-        kind: 'deterministic',
+        kind: lintAxisScore.kind,
         findings: lintFindings,
       };
     } else {
@@ -294,7 +296,8 @@ export function scoreLintOnly(server: ServerMeta, lintResult: LintResult): Score
     axes[axis] = {
       score: la.score,
       lineage: AXIS_LINEAGE[axis],
-      kind: 'deterministic',
+      // Preserve the engine's kind: eval-only axes stay 'eval' with a null score.
+      kind: la.kind,
       findings: la.findings,
     };
   }

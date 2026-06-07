@@ -21,9 +21,9 @@
       ]
     },
     "tool-selection-confusion": {
-      "score": 10,
+      "score": null,
       "lineage": "tool-choice",
-      "kind": "deterministic",
+      "kind": "eval",
       "findings": []
     },
     "param-strictness": {
@@ -90,9 +90,9 @@
       ]
     },
     "output-leanness": {
-      "score": 10,
+      "score": null,
       "lineage": "output-contract",
-      "kind": "deterministic",
+      "kind": "eval",
       "findings": [
         {
           "ruleId": "no-output-schema",
@@ -139,9 +139,9 @@
       ]
     },
     "error-helpfulness": {
-      "score": 10,
+      "score": null,
       "lineage": "provider-only",
-      "kind": "deterministic",
+      "kind": "eval",
       "findings": [
         {
           "ruleId": "no-error-docs",
@@ -189,8 +189,8 @@
     }
   },
   "aggregate": {
-    "lintScore": 8.5,
-    "weighted": 8.5
+    "lintScore": 5.6,
+    "weighted": 5.6
   },
   "tools": [
     {

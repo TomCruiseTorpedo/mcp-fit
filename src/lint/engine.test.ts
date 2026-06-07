@@ -10,7 +10,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { lint } from './engine.js';
-import type { McpTool } from '../types.js';
+import type { McpTool, AxisName } from '../types.js';
+import { DETERMINISTIC_AXES } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -213,7 +214,8 @@ describe('score structure', () => {
       },
     }));
     const result = lint(bad);
-    for (const [, axisScore] of Object.entries(result.axisScores)) {
+    for (const axisScore of Object.values(result.axisScores)) {
+      if (axisScore.score === null) continue; // eval-only axis — no deterministic score
       expect(axisScore.score).toBeGreaterThanOrEqual(1);
       expect(axisScore.score).toBeLessThanOrEqual(10);
     }
@@ -225,11 +227,22 @@ describe('score structure', () => {
     expect(result.aggregate.lintScore).toBeLessThanOrEqual(10);
   });
 
-  it('all findings are tagged with kind=deterministic', () => {
+  it('only statically-assessable axes are deterministic; behavioural axes are eval-only', () => {
     const result = lint([minimalTool('t')]);
-    for (const axis of Object.values(result.axisScores)) {
-      expect(axis.kind).toBe('deterministic');
+    for (const [name, axis] of Object.entries(result.axisScores)) {
+      if (DETERMINISTIC_AXES.has(name as AxisName)) {
+        expect(axis.kind).toBe('deterministic');
+        expect(typeof axis.score).toBe('number');
+      } else {
+        expect(axis.kind).toBe('eval');
+        expect(axis.score).toBeNull();
+      }
     }
+    // The behavioural axes static lint cannot grade carry a null deterministic score:
+    expect(result.axisScores['output-leanness'].score).toBeNull();
+    expect(result.axisScores['error-helpfulness'].score).toBeNull();
+    expect(result.axisScores['tool-selection-confusion'].score).toBeNull();
+    expect(result.axisScores['param-strictness'].score).not.toBeNull();
   });
 
   it('every tool-level finding references a tool present in the input', () => {

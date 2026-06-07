@@ -132,11 +132,16 @@ function renderScorecard(scorecard: Scorecard): string {
     const errCnt = axisScore.findings.filter((f) => f.severity === 'error').length;
     const warnCnt = axisScore.findings.filter((f) => f.severity === 'warning').length;
     const findingStr =
-      errCnt > 0 || warnCnt > 0
-        ? `${errCnt}err ${warnCnt}warn`
-        : 'clean';
+      s === null
+        ? 'eval-only (run --eval)'
+        : errCnt > 0 || warnCnt > 0
+          ? `${errCnt}err ${warnCnt}warn`
+          : 'clean';
+    // Eval-only axes carry no deterministic grade — render a dash, never a 10.
+    const scoreCol = s === null ? '—' : `${s}`;
+    const gradeCol = s === null ? '·' : grade(s);
     const row =
-      `│  ${axis.padEnd(32)} ${String(s).padEnd(3)}/10  ${grade(s).padEnd(4)}  ${findingStr}`;
+      `│  ${axis.padEnd(32)} ${scoreCol.padEnd(3)}/10  ${gradeCol.padEnd(4)}  ${findingStr}`;
     line(row.padEnd(61) + '│');
   }
 

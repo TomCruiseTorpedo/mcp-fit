@@ -20,10 +20,11 @@ import type { LintResult } from '../lint/engine.js';
 /** Per-axis score change. */
 export interface AxisDelta {
   axis: AxisName;
-  before: number;
-  after: number;
-  /** Positive = improvement, negative = regression. */
-  delta: number;
+  /** Deterministic 1–10 score, or null for eval-only axes. */
+  before: number | null;
+  after: number | null;
+  /** Positive = improvement, negative = regression; null when either side is eval-only. */
+  delta: number | null;
 }
 
 /**
@@ -44,9 +45,10 @@ export interface FixDelta {
   scoreDelta: number;
   /**
    * Change in output-leanness axis score (proxy for token-waste reduction).
-   * Positive = descriptions better signal lean/structured output contracts.
+   * That axis is eval-only, so this is null without --eval — output-shape
+   * quality is a runtime property static lint cannot grade.
    */
-  tokenWasteDelta: number;
+  tokenWasteDelta: number | null;
   /** Number of error/warning findings eliminated. */
   findingsEliminated: number;
   /**
@@ -87,17 +89,20 @@ export function computeDelta(before: LintResult, after: LintResult): FixDelta {
   const axes: AxisDelta[] = AXIS_NAMES.map((axis) => {
     const b = before.axisScores[axis].score;
     const a = after.axisScores[axis].score;
-    return { axis, before: b, after: a, delta: a - b };
+    // Eval-only axes (null) carry no deterministic delta.
+    const delta = a === null || b === null ? null : a - b;
+    return { axis, before: b, after: a, delta };
   });
 
   const beforeWeighted = before.aggregate.weighted;
   const afterWeighted = after.aggregate.weighted;
 
-  // Token-waste delta = improvement on the output-leanness axis.
-  // This axis reflects how well tool descriptions signal structured/lean output.
-  const tokenWasteDelta =
-    after.axisScores['output-leanness'].score -
-    before.axisScores['output-leanness'].score;
+  // Token-waste delta = improvement on the output-leanness axis, which is
+  // eval-only (a runtime output-shape property static lint cannot grade) → the
+  // deterministic delta is null; --eval measures the real change.
+  const olAfter = after.axisScores['output-leanness'].score;
+  const olBefore = before.axisScores['output-leanness'].score;
+  const tokenWasteDelta = olAfter === null || olBefore === null ? null : olAfter - olBefore;
 
   const beforeFindings = countActionableFindings(before);
   const afterFindings = countActionableFindings(after);
@@ -138,9 +143,9 @@ export function formatDelta(delta: FixDelta): string {
   );
 
   for (const axis of delta.axes) {
-    if (axis.delta !== 0) {
-      lines.push(`  ${axis.axis}: ${axis.before} → ${axis.after} (${sign(axis.delta)})`);
-    }
+    // Eval-only axes (null delta) have no deterministic change to report.
+    if (axis.delta === null || axis.delta === 0) continue;
+    lines.push(`  ${axis.axis}: ${axis.before} → ${axis.after} (${sign(axis.delta)})`);
   }
 
   if (delta.findingsEliminated > 0) {
