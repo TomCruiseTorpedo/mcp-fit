@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/TomCruiseTorpedo/mcp-fit/schemas/evals.schema.json",
+  "title": "mcp-fit Task Trace",
+  "description": "One JSON object per line in evals.jsonl — a task execution trace from the dynamic eval runner.",
+  "type": "object",
+  "required": [
+    "taskId",
+    "multiStep",
+    "lowSignal",
+    "pass",
+    "tokenCost",
+    "chosenTools",
+    "provenanceEvents",
+    "rubric"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "taskId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique task identifier from the corpus."
+    },
+    "multiStep": {
+      "type": "boolean",
+      "description": "True when the task requires ≥2 sequential tool calls. Multi-step tasks carry the signal weight."
+    },
+    "lowSignal": {
+      "type": "boolean",
+      "description": "True when the task is a trivial single-call. Flagged per the selectivity principle — does not dominate the aggregate."
+    },
+    "pass": {
+      "type": "boolean",
+      "description": "Whether the agent completed the task successfully."
+    },
+    "tokenCost": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total tokens consumed by the agent during this task."
+    },
+    "chosenTools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ordered list of tool names the agent called, in call order."
+    },
+    "provenanceEvents": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProvenanceEvent"
+      },
+      "description": "Provenance events for agent-supplied arguments. Fabricated events feed the v1.1 data-provenance axis."
+    },
+    "rubric": {
+      "$ref": "#/$defs/RubricResult"
+    }
+  },
+  "$defs": {
+    "ProvenanceEvent": {
+      "type": "object",
+      "description": "Records whether an agent-supplied argument was traceable to prior context or was fabricated.",
+      "required": ["type", "tool", "param"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["fabricated", "traced", "literal"],
+          "description": "fabricated = hallucinated value; traced = derived from a prior tool return; literal = task-provided constant."
+        },
+        "tool": {
+          "type": "string",
+          "description": "Tool call where this provenance event occurred."
+        },
+        "param": {
+          "type": "string",
+          "description": "Parameter name the event is associated with."
+        },
+        "value": {
+          "description": "The argument value (any type; omit to save space)."
+        }
+      }
+    },
+    "RubricResult": {
+      "type": "object",
+      "description": "Result from the contract-rubric judge loop (spec §Scorecard, ADR-B).",
+      "required": ["score", "round"],
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Ordinal 1–10 quality score from the rubric judge."
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Round at which scoring completed — early-stop at 10 or patience exhausted."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,222 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/TomCruiseTorpedo/mcp-fit/schemas/compat.schema.json",
+  "title": "mcp-fit Scorecard",
+  "description": "Machine-readable compatibility scorecard emitted by mcp-fit as compat.json. Validates against ADR-A contract.",
+  "type": "object",
+  "required": ["schemaVersion", "server", "axes", "aggregate", "tools"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Schema version for forward-compatibility. Bump on breaking changes."
+    },
+    "server": {
+      "$ref": "#/$defs/ServerMeta"
+    },
+    "axes": {
+      "type": "object",
+      "description": "Per-axis scores over the five agent-usability contract axes.",
+      "required": [
+        "namespacing",
+        "tool-selection-confusion",
+        "param-strictness",
+        "output-leanness",
+        "error-helpfulness"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "namespacing": {
+          "$ref": "#/$defs/AxisScore",
+          "description": "Lineage: tool-choice. Tools are distinguishable; documented path is obvious."
+        },
+        "tool-selection-confusion": {
+          "$ref": "#/$defs/AxisScore",
+          "description": "Lineage: tool-choice. Overlapping / ambiguous tools that mislead selection."
+        },
+        "param-strictness": {
+          "$ref": "#/$defs/AxisScore",
+          "description": "Lineage: call-signature. Unambiguous signatures; clear required args."
+        },
+        "output-leanness": {
+          "$ref": "#/$defs/AxisScore",
+          "description": "Lineage: output-contract (load-bearing). Clean typed values vs labeled prose / token bloat."
+        },
+        "error-helpfulness": {
+          "$ref": "#/$defs/AxisScore",
+          "description": "Lineage: provider-only. Errors that guide recovery vs opaque failures."
+        }
+      }
+    },
+    "aggregate": {
+      "$ref": "#/$defs/AggregateScore"
+    },
+    "tools": {
+      "type": "array",
+      "description": "Per-tool findings list.",
+      "items": {
+        "$ref": "#/$defs/ToolReport"
+      }
+    }
+  },
+  "$defs": {
+    "ServerMeta": {
+      "type": "object",
+      "description": "Target MCP server metadata.",
+      "required": ["name", "version", "transport"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Server name from MCP introspection."
+        },
+        "version": {
+          "type": "string",
+          "description": "Server version from MCP introspection."
+        },
+        "transport": {
+          "type": "string",
+          "enum": ["stdio", "sse", "http"],
+          "description": "Transport used to connect."
+        }
+      }
+    },
+    "AxisScore": {
+      "type": "object",
+      "description": "Score for one agent-usability axis. Score 10 = trivially correct; 1–4 = very easy to get wrong.",
+      "required": ["score", "lineage", "kind", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Ordinal 1–10 agent-usability score for this axis."
+        },
+        "lineage": {
+          "type": "string",
+          "enum": ["tool-choice", "call-signature", "output-contract", "provider-only"],
+          "description": "RubricRefine provider-side contract category this axis traces to."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["deterministic", "eval"],
+          "description": "Deterministic = lint-derived (reproducible, badge-able). Eval = LLM-judge (reported with variance)."
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Finding"
+          }
+        },
+        "variance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Reported for stochastic eval scores. Guards before/after delta claims."
+        }
+      }
+    },
+    "Finding": {
+      "type": "object",
+      "description": "A diagnostic finding from lint or eval, tagged to an axis.",
+      "required": ["axis", "severity", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "description": "Lint rule identifier, e.g. 'no-missing-tool-description'. Optional."
+        },
+        "axis": {
+          "type": "string",
+          "enum": [
+            "namespacing",
+            "tool-selection-confusion",
+            "param-strictness",
+            "output-leanness",
+            "error-helpfulness"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning", "info"]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool": {
+          "type": "string",
+          "description": "Offending tool name, if applicable."
+        },
+        "param": {
+          "type": "string",
+          "description": "Offending parameter name, if applicable."
+        }
+      }
+    },
+    "EvalScore": {
+      "type": "object",
+      "description": "Stochastic eval score — mean ± stdev over N runs.",
+      "required": ["mean", "stdev", "n"],
+      "additionalProperties": false,
+      "properties": {
+        "mean": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "stdev": {
+          "type": "number",
+          "minimum": 0
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of eval runs."
+        }
+      }
+    },
+    "AggregateScore": {
+      "type": "object",
+      "description": "Aggregate scorecard. Deterministic and stochastic components are first-class-separate (ADR-A).",
+      "required": ["lintScore", "weighted"],
+      "additionalProperties": false,
+      "properties": {
+        "lintScore": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Deterministic lint headline — the badge-able number (ADR-C)."
+        },
+        "evalScore": {
+          "$ref": "#/$defs/EvalScore",
+          "description": "Stochastic eval aggregate. Absent when eval was not run."
+        },
+        "weighted": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Weighted aggregate: output-leanness ×1.5, param-strictness capped, rest ×1.0 (ADR-C)."
+        }
+      }
+    },
+    "ToolReport": {
+      "type": "object",
+      "description": "Findings for a single server tool.",
+      "required": ["name", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Finding"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,111 @@
+[
+  {
+    "taskId": "single-get-001",
+    "description": "Retrieve the note with ID 'note-1' and report its title.",
+    "multiStep": false,
+    "lowSignal": true,
+    "expectedTools": ["get"],
+    "verificationCriteria": "Agent calls 'get' with id='note-1' and extracts the title field from the response."
+  },
+  {
+    "taskId": "single-remove-001",
+    "description": "Delete the note with ID 'note-2'.",
+    "multiStep": false,
+    "lowSignal": true,
+    "expectedTools": ["remove"],
+    "verificationCriteria": "Agent calls 'remove' with id='note-2' and confirms deletion."
+  },
+  {
+    "taskId": "single-search-001",
+    "description": "Search for notes containing the word 'welcome'.",
+    "multiStep": false,
+    "lowSignal": true,
+    "expectedTools": ["search"],
+    "verificationCriteria": "Agent calls 'search' with a query containing 'welcome' and reports any matching notes."
+  },
+  {
+    "taskId": "multi-create-verify-001",
+    "description": "Create a note titled 'Project Alpha' with the content 'Initial planning phase complete'. Then retrieve it to confirm it was saved correctly.",
+    "multiStep": true,
+    "lowSignal": false,
+    "expectedTools": ["process", "get"],
+    "steps": [
+      {
+        "stepId": "create",
+        "description": "Create the note using 'Project Alpha' as the title and 'Initial planning phase complete' as the content.",
+        "expectedTool": "process"
+      },
+      {
+        "stepId": "verify",
+        "description": "Retrieve the newly created note using the ID returned from the creation step to confirm content is correct.",
+        "expectedTool": "get"
+      }
+    ],
+    "verificationCriteria": "Agent creates a note then calls 'get' with the ID returned from 'process'. The retrieved content must match what was submitted. Probes provenance: the ID used in 'get' must trace to the output of 'process', not be fabricated."
+  },
+  {
+    "taskId": "multi-search-update-001",
+    "description": "Search for notes about 'Q1'. Take the first matching note and update it so its content ends with the word 'REVIEWED'.",
+    "multiStep": true,
+    "lowSignal": false,
+    "expectedTools": ["search", "change"],
+    "steps": [
+      {
+        "stepId": "search",
+        "description": "Search for notes containing 'Q1'.",
+        "expectedTool": "search"
+      },
+      {
+        "stepId": "update",
+        "description": "Update the first matching note's content to append 'REVIEWED'.",
+        "expectedTool": "change"
+      }
+    ],
+    "verificationCriteria": "Agent searches for 'Q1' notes, extracts an ID from the search output, then calls 'change' with that ID. The ID used in 'change' must trace to the search result, not be fabricated."
+  },
+  {
+    "taskId": "multi-create-search-delete-001",
+    "description": "Create a note titled 'Temp Task' with content 'Temporary item for cleanup'. Search to confirm it appears in results. Then delete it using the ID from the search results.",
+    "multiStep": true,
+    "lowSignal": false,
+    "expectedTools": ["process", "search", "remove"],
+    "steps": [
+      {
+        "stepId": "create",
+        "description": "Create a note titled 'Temp Task' with content 'Temporary item for cleanup'.",
+        "expectedTool": "process"
+      },
+      {
+        "stepId": "search",
+        "description": "Search for 'Temp Task' to confirm the note exists.",
+        "expectedTool": "search"
+      },
+      {
+        "stepId": "delete",
+        "description": "Delete the note using the ID extracted from the search results.",
+        "expectedTool": "remove"
+      }
+    ],
+    "verificationCriteria": "Agent creates a note, confirms it exists via search, then deletes it. The ID used in 'remove' must trace to the 'search' result output, not be fabricated or reuse the 'process' output directly."
+  },
+  {
+    "taskId": "multi-search-find-compare-001",
+    "description": "Use the 'search' tool to look for notes about 'meeting'. Then use the 'find' tool to look for the same. Report whether both tools returned the same results.",
+    "multiStep": true,
+    "lowSignal": false,
+    "expectedTools": ["search", "find"],
+    "steps": [
+      {
+        "stepId": "search",
+        "description": "Search for notes about 'meeting' using the 'search' tool.",
+        "expectedTool": "search"
+      },
+      {
+        "stepId": "find",
+        "description": "Search for notes about 'meeting' using the 'find' tool.",
+        "expectedTool": "find"
+      }
+    ],
+    "verificationCriteria": "Agent uses both 'search' and 'find' tools and compares results. This task deliberately exposes the tool-selection-confusion anti-pattern: two tools with overlapping semantics force the agent to call both to compare."
+  }
+]
