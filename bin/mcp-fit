@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+/**
+ * mcp-fit CLI entry point.
+ *
+ * This thin wrapper delegates to the compiled dist/cli.js.
+ * Run `npm run build` before using this wrapper directly.
+ *
+ * When installed via `npm install -g mcp-fit` or `npx mcp-fit`, npm
+ * makes this file executable and sets up PATH automatically.
+ */
+import('../dist/cli.js');

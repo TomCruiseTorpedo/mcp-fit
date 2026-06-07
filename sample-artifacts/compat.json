@@ -1,0 +1,374 @@
+{
+  "schemaVersion": "1.0.0",
+  "server": {
+    "name": "strawman",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "axes": {
+    "namespacing": {
+      "score": 9,
+      "lineage": "tool-choice",
+      "kind": "deterministic",
+      "findings": [
+        {
+          "ruleId": "vague-tool-name",
+          "axis": "namespacing",
+          "severity": "warning",
+          "tool": "get",
+          "message": "Tool name \"get\" is too generic; prefer a domain-specific descriptive name."
+        }
+      ]
+    },
+    "tool-selection-confusion": {
+      "score": 10,
+      "lineage": "tool-choice",
+      "kind": "deterministic",
+      "findings": []
+    },
+    "param-strictness": {
+      "score": 1,
+      "lineage": "call-signature",
+      "kind": "deterministic",
+      "findings": [
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "change",
+          "param": "id",
+          "message": "Required parameter \"id\" of tool \"change\" has no description."
+        },
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "change",
+          "param": "data",
+          "message": "Required parameter \"data\" of tool \"change\" has no description."
+        },
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "find",
+          "param": "query",
+          "message": "Required parameter \"query\" of tool \"find\" has no description."
+        },
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "get",
+          "param": "id",
+          "message": "Required parameter \"id\" of tool \"get\" has no description."
+        },
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "process",
+          "param": "data",
+          "message": "Required parameter \"data\" of tool \"process\" has no description."
+        },
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "remove",
+          "param": "id",
+          "message": "Required parameter \"id\" of tool \"remove\" has no description."
+        },
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "search",
+          "param": "q",
+          "message": "Required parameter \"q\" of tool \"search\" has no description."
+        }
+      ]
+    },
+    "output-leanness": {
+      "score": 10,
+      "lineage": "output-contract",
+      "kind": "deterministic",
+      "findings": [
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "change",
+          "message": "Tool \"change\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "find",
+          "message": "Tool \"find\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "get",
+          "message": "Tool \"get\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "process",
+          "message": "Tool \"process\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "remove",
+          "message": "Tool \"remove\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "search",
+          "message": "Tool \"search\" does not declare an outputSchema; structured contracts improve token efficiency."
+        }
+      ]
+    },
+    "error-helpfulness": {
+      "score": 10,
+      "lineage": "provider-only",
+      "kind": "deterministic",
+      "findings": [
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "change",
+          "message": "Tool \"change\" description does not mention error cases or recovery guidance."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "find",
+          "message": "Tool \"find\" description does not mention error cases or recovery guidance."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "get",
+          "message": "Tool \"get\" description does not mention error cases or recovery guidance."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "process",
+          "message": "Tool \"process\" description does not mention error cases or recovery guidance."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "remove",
+          "message": "Tool \"remove\" description does not mention error cases or recovery guidance."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "search",
+          "message": "Tool \"search\" description does not mention error cases or recovery guidance."
+        }
+      ]
+    }
+  },
+  "aggregate": {
+    "lintScore": 8.5,
+    "weighted": 8.5
+  },
+  "tools": [
+    {
+      "name": "change",
+      "findings": [
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "change",
+          "param": "id",
+          "message": "Required parameter \"id\" of tool \"change\" has no description."
+        },
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "change",
+          "param": "data",
+          "message": "Required parameter \"data\" of tool \"change\" has no description."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "change",
+          "message": "Tool \"change\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "change",
+          "message": "Tool \"change\" description does not mention error cases or recovery guidance."
+        }
+      ]
+    },
+    {
+      "name": "find",
+      "findings": [
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "find",
+          "param": "query",
+          "message": "Required parameter \"query\" of tool \"find\" has no description."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "find",
+          "message": "Tool \"find\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "find",
+          "message": "Tool \"find\" description does not mention error cases or recovery guidance."
+        }
+      ]
+    },
+    {
+      "name": "get",
+      "findings": [
+        {
+          "ruleId": "vague-tool-name",
+          "axis": "namespacing",
+          "severity": "warning",
+          "tool": "get",
+          "message": "Tool name \"get\" is too generic; prefer a domain-specific descriptive name."
+        },
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "get",
+          "param": "id",
+          "message": "Required parameter \"id\" of tool \"get\" has no description."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "get",
+          "message": "Tool \"get\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "get",
+          "message": "Tool \"get\" description does not mention error cases or recovery guidance."
+        }
+      ]
+    },
+    {
+      "name": "process",
+      "findings": [
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "process",
+          "param": "data",
+          "message": "Required parameter \"data\" of tool \"process\" has no description."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "process",
+          "message": "Tool \"process\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "process",
+          "message": "Tool \"process\" description does not mention error cases or recovery guidance."
+        }
+      ]
+    },
+    {
+      "name": "remove",
+      "findings": [
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "remove",
+          "param": "id",
+          "message": "Required parameter \"id\" of tool \"remove\" has no description."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "remove",
+          "message": "Tool \"remove\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "remove",
+          "message": "Tool \"remove\" description does not mention error cases or recovery guidance."
+        }
+      ]
+    },
+    {
+      "name": "search",
+      "findings": [
+        {
+          "ruleId": "no-required-param-description",
+          "axis": "param-strictness",
+          "severity": "error",
+          "tool": "search",
+          "param": "q",
+          "message": "Required parameter \"q\" of tool \"search\" has no description."
+        },
+        {
+          "ruleId": "no-output-schema",
+          "axis": "output-leanness",
+          "severity": "info",
+          "tool": "search",
+          "message": "Tool \"search\" does not declare an outputSchema; structured contracts improve token efficiency."
+        },
+        {
+          "ruleId": "no-error-docs",
+          "axis": "error-helpfulness",
+          "severity": "info",
+          "tool": "search",
+          "message": "Tool \"search\" description does not mention error cases or recovery guidance."
+        }
+      ]
+    }
+  ]
+}
