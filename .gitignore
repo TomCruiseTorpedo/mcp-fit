@@ -6,6 +6,12 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# tool output — mcp-fit writes these to --out (default: cwd); sample-artifacts/ stays committed
+/compat.json
+/evals.jsonl
+/fixes.json
+/out/
+
 # env / secrets — never commit (history goes public at the reveal)
 .env
 .env.*

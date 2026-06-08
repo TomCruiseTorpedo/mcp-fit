@@ -2,6 +2,25 @@
   "name": "mcp-fit",
   "version": "0.1.0",
   "description": "MCP server agent-usability scorer — scores and auto-fixes tool descriptions",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "agent",
+    "llm",
+    "tool-use",
+    "linter",
+    "scorecard",
+    "agent-usability"
+  ],
+  "homepage": "https://github.com/TomCruiseTorpedo/mcp-fit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TomCruiseTorpedo/mcp-fit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TomCruiseTorpedo/mcp-fit/issues"
+  },
+  "author": "TomCruiseTorpedo",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -18,7 +37,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
