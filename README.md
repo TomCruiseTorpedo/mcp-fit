@@ -12,6 +12,8 @@ The scorecard axes are the provider-side dual of the RubricRefine tool-use contr
 
 Score the bundled strawman server (a deliberately bad in-memory note store):
 
+> Scanning **your own** server needs no clone → `npx mcp-fit scan -- <your-server-command>`. The walkthrough below uses the repo's bundled strawman fixture, so it is clone-based.
+
 ```bash
 # 1. Clone and install
 git clone <repo-url> mcp-fit && cd mcp-fit
