@@ -15,10 +15,11 @@ dist/
 coverage/
 .DS_Store
 
-# agent / runtime scratch
+# agent / fleet runtime + internal SSOT — NEVER commit (hygiene gate)
 .pi/
 *.tmp
 bun.lock
+.runtime/
 .beads/
 CLAUDE.local.md
 .cline/
