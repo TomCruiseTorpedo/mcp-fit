@@ -1,5 +1,6 @@
-# dependencies
+# dependencies — bun.lock is the committed lockfile (bun is the dev tool); the npm lockfile is not used
 node_modules/
+/package-lock.json
 
 # build output
 dist/
@@ -18,7 +19,6 @@ coverage/
 # agent / fleet runtime + internal SSOT — NEVER commit (hygiene gate)
 .pi/
 *.tmp
-bun.lock
 .runtime/
 .beads/
 CLAUDE.local.md
