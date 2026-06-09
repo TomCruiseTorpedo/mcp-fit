@@ -1,5 +1,8 @@
 # mcp-fit
 
+[![CI](https://github.com/TomCruiseTorpedo/mcp-fit/actions/workflows/ci.yml/badge.svg)](https://github.com/TomCruiseTorpedo/mcp-fit/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 **Score MCP servers for agent-usability — then auto-fix them.**
 
 Plenty of tools let you *expose* an MCP server. None tell you whether it is actually *agent-friendly*: clean namespacing, strict params, lean typed outputs, helpful errors, low tool-selection confusion. `mcp-fit` does.
