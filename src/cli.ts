@@ -23,6 +23,7 @@
  */
 
 import { mkdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 import { connectClient } from './connect/client.js';
@@ -38,10 +39,16 @@ import type { Scorecard } from './types.js';
 import { AXIS_NAMES } from './types.js';
 
 // ---------------------------------------------------------------------------
-// Version (sync with package.json)
+// Version — read from package.json so the banner never drifts from the
+// published version. Resolves to the package root in src (tsx), dist, and the
+// installed tarball alike (package.json is always shipped).
 // ---------------------------------------------------------------------------
 
-const CLI_VERSION = '0.1.0';
+const CLI_VERSION = (
+  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+    version: string;
+  }
+).version;
 
 // ---------------------------------------------------------------------------
 // Help text
@@ -76,8 +83,9 @@ EXAMPLES
   # Auto-fix descriptions and show delta
   mcp-fit fix -- npx -y @my-org/my-server
 
-  # Quickstart against the bundled strawman (from repo root):
-  mcp-fit scan -- node --import tsx/esm fixtures/strawman-server/server.ts
+  # Demo strawman — clone the repo first (fixtures are NOT in the npm package):
+  #   git clone https://github.com/TomCruiseTorpedo/mcp-fit && cd mcp-fit && npm i
+  mcp-fit scan -- fixtures/strawman-server/node_modules/.bin/tsx fixtures/strawman-server/server.ts
 
 ARTIFACTS
   compat.json   Full scorecard (validates against schemas/compat.schema.json)

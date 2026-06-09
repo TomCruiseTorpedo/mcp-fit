@@ -1,6 +1,6 @@
 {
   "name": "mcp-fit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server agent-usability scorer — scores and auto-fixes tool descriptions",
   "keywords": [
     "mcp",
