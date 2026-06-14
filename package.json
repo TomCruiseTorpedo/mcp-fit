@@ -41,6 +41,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:score-sync": "bash scripts/check-sync.sh",
     "prepare": "npm run build"
   },
   "dependencies": {

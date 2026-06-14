@@ -17,6 +17,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { DEFAULT_SCORE_MODEL, isModelConfigError } from '../models.js';
 import type { EvalTask } from '../eval/harness.js';
 import type { TaskTrace } from '../types.js';
 
@@ -71,7 +72,7 @@ export interface RubricLoopOptions {
   apiKey?: string;
   /**
    * Model for rubric generation and scoring.
-   * Defaults to claude-3-5-haiku-20241022 (fast + cheap).
+   * Defaults to {@link DEFAULT_SCORE_MODEL} (fast + cheap).
    */
   model?: string;
   /**
@@ -192,7 +193,10 @@ Higher weight = more important for this task.`;
       .map((b) => b.text)
       .join('');
   } catch (err) {
-    // Return a minimal default rubric if the API call fails
+    // A retired/unknown model or bad API key is a config error — surface it
+    // instead of masking the breakage behind a canned rubric.
+    if (isModelConfigError(err)) throw err;
+    // Return a minimal default rubric if a transient API error occurs.
     return {
       taskId: task.taskId,
       criteria: [
@@ -299,8 +303,11 @@ Format: "[rationale]. Score: [1-10]"`;
       .map((b) => b.text)
       .join('');
     rationale = responseText.slice(0, 200);
-  } catch {
-    // Return a score derived from pass/fail if API fails
+  } catch (err) {
+    // A retired/unknown model or bad API key is a config error — surface it
+    // instead of masking the breakage behind a pass/fail-derived score.
+    if (isModelConfigError(err)) throw err;
+    // Return a score derived from pass/fail if a transient API error occurs.
     const fallbackScore = trace.pass ? 7 : 3;
     return { score: fallbackScore, round, rationale: 'API error; fallback score from pass/fail' };
   }
@@ -336,7 +343,7 @@ export async function runRubricLoop(
   const client =
     options.client ??
     new Anthropic({ apiKey: options.apiKey ?? process.env['ANTHROPIC_API_KEY'] });
-  const model = options.model ?? 'claude-3-5-haiku-20241022';
+  const model = options.model ?? DEFAULT_SCORE_MODEL;
   const maxRounds = options.maxRounds ?? 3;
   const patience = options.patience ?? 2;
   const maxTokens = options.maxTokens ?? 512;

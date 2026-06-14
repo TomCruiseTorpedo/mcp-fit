@@ -17,6 +17,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { DEFAULT_SCORE_MODEL } from '../models.js';
 import type {
   MessageParam,
   ToolUseBlock,
@@ -215,7 +216,7 @@ export interface ClaudeHarnessOptions {
   apiKey?: string;
   /** Inject a pre-built Anthropic client (useful for tests). */
   client?: Anthropic;
-  /** Model to use. Defaults to claude-3-5-haiku-20241022 (fast + cheap). */
+  /** Model to use. Defaults to {@link DEFAULT_SCORE_MODEL} (fast + cheap). */
   model?: string;
   /** Maximum conversation turns before giving up. Default 10. */
   maxTurns?: number;
@@ -239,7 +240,7 @@ export class ClaudeHarness implements Harness {
     this.client =
       options.client ??
       new Anthropic({ apiKey: options.apiKey ?? process.env['ANTHROPIC_API_KEY'] });
-    this.model = options.model ?? 'claude-3-5-haiku-20241022';
+    this.model = options.model ?? DEFAULT_SCORE_MODEL;
     this.maxTurns = options.maxTurns ?? 10;
     this.maxTokens = options.maxTokens ?? 1024;
   }
@@ -265,6 +266,16 @@ export class ClaudeHarness implements Harness {
     const toolDefs = await sandbox.listTools();
     const anthropicTools = toolDefs.map(toAnthropicTool);
 
+    // Prompt caching: tag the last tool definition so the (stable) toolset
+    // prefix is cached across turns — and across tasks that share the same
+    // toolset. Cache reads cost ~0.1x input price. Silently no-ops when the
+    // toolset is below the model's minimum cacheable prefix; verify it is
+    // actually caching via usage.cache_read_input_tokens.
+    if (anthropicTools.length > 0) {
+      const lastTool = anthropicTools[anthropicTools.length - 1];
+      if (lastTool) lastTool.cache_control = { type: 'ephemeral' };
+    }
+
     const messages: MessageParam[] = [
       { role: 'user', content: task.description },
     ];
@@ -284,8 +295,13 @@ export class ClaudeHarness implements Harness {
       });
 
       const usage = response.usage;
+      // Include cached tokens — with prompt caching, input_tokens is only the
+      // *uncached* remainder, so total = input + output + cache_creation + cache_read.
       totalTokens +=
-        (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0);
+        (usage?.input_tokens ?? 0) +
+        (usage?.output_tokens ?? 0) +
+        (usage?.cache_creation_input_tokens ?? 0) +
+        (usage?.cache_read_input_tokens ?? 0);
 
       if (response.stop_reason === 'end_turn') {
         // Agent completed without a pending tool call

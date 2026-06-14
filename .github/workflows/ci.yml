@@ -21,3 +21,5 @@ jobs:
         run: bun run typecheck
       - name: Test
         run: bun run test
+      - name: Score-engine drift guard
+        run: bun run check:score-sync
