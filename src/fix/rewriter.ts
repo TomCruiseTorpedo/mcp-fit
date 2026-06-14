@@ -13,6 +13,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { DEFAULT_SCORE_MODEL, isModelConfigError } from '../models.js';
 import type { DescriptionOverride, Finding, ToolDef } from '../types.js';
 import type { LintResult } from '../lint/engine.js';
 
@@ -28,7 +29,7 @@ export interface RewriterOptions {
   apiKey?: string;
   /**
    * Model for description rewriting.
-   * Defaults to claude-3-5-haiku-20241022 (fast + cheap).
+   * Defaults to {@link DEFAULT_SCORE_MODEL} (fast + cheap).
    */
   model?: string;
   /** Max tokens per LLM call. Default 1024. */
@@ -255,7 +256,7 @@ export async function rewrite(
   options: RewriterOptions = {},
 ): Promise<RewriterResult> {
   const {
-    model = 'claude-3-5-haiku-20241022',
+    model = DEFAULT_SCORE_MODEL,
     maxTokens = 1024,
     noOpThreshold = 9.0,
   } = options;
@@ -323,8 +324,11 @@ export async function rewrite(
         if (parsed.description !== undefined || parsed.params !== undefined) {
           override = { tool: tool.name, ...parsed };
         }
-      } catch {
-        // LLM call failed — fall through to rule-based
+      } catch (err) {
+        // A retired/unknown model or bad API key is a config error — surface it
+        // instead of silently falling through to the rule-based path.
+        if (isModelConfigError(err)) throw err;
+        // Transient LLM failure — fall through to rule-based.
       }
     }
 
