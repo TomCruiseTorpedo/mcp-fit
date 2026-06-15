@@ -53,17 +53,20 @@ Expected output (lint-only — the deterministic badge scores only the axes stat
 └────────────────────────────────────────────────────────────┘
 ```
 
-The `—` axes are **eval-only**: static lint cannot grade runtime output shape, error quality, or tool-selection confusion, so the deterministic badge does not claim a verdict on them. Run `scan --eval` (needs `ANTHROPIC_API_KEY`) to score them stochastically.
+The `—` axes are **eval-only**: static lint cannot grade runtime output shape, error quality, or tool-selection confusion, so the deterministic badge does not claim a verdict on them. Scoring those stochastically uses the dynamic eval harness (`src/eval/`, needs `ANTHROPIC_API_KEY`), which is currently programmatic-only — not yet exposed as a CLI flag.
 
 ### Keyless red→green (no API key)
 
 `fixtures/strawman-fixed-server` is the strawman with clean contracts. Scan both and compare the deterministic LINT SCORE — a reproducible before/after with no LLM call:
 
 ```bash
+# install the fixed-server fixture's deps (first time only)
+cd fixtures/strawman-fixed-server && npm install && cd ../..
+
 # bad: 5.6 / 10  (param-strictness F)
-node bin/mcp-fit scan -- fixtures/strawman-server/node_modules/.bin/tsx fixtures/strawman-server/server.ts
+node dist/cli.js scan -- fixtures/strawman-server/node_modules/.bin/tsx fixtures/strawman-server/server.ts
 # fixed: 10 / 10  (A)
-node bin/mcp-fit scan -- fixtures/strawman-fixed-server/node_modules/.bin/tsx fixtures/strawman-fixed-server/server.ts
+node dist/cli.js scan -- fixtures/strawman-fixed-server/node_modules/.bin/tsx fixtures/strawman-fixed-server/server.ts
 ```
 
 > See `sample-artifacts/` for a pre-generated `compat.json` and `evals.jsonl` from the strawman run.
@@ -78,7 +81,7 @@ node dist/cli.js fix \
   -- fixtures/strawman-server/node_modules/.bin/tsx fixtures/strawman-server/server.ts
 ```
 
-> **Note:** `fix` calls the Claude API. Set `ANTHROPIC_API_KEY` in your environment, or copy `.env.example` to `.env` first.
+> **Note:** with `ANTHROPIC_API_KEY` set, `fix` uses Claude to rewrite descriptions; without it, `fix` falls back to rule-based heuristics (no LLM call). Set the key in your environment for Claude-powered rewrites.
 
 ### SSE / HTTP transport
 
@@ -121,7 +124,7 @@ mcp-fit help
 | `error-helpfulness` | provider-only | errors that guide recovery vs opaque failures |
 
 Scores are 1–10 ordinal (10 = trivially correct; 1–4 = very easy to get wrong).
-The lint score is deterministic and badge-able. The eval score (stochastic, requires `--eval`) is reported with variance.
+The lint score is deterministic and badge-able. The eval score (stochastic, via the `src/eval/` harness) is reported with variance.
 
 ## Artifacts
 
@@ -140,7 +143,7 @@ npm test            # vitest run
 
 ## Security
 
-- `ANTHROPIC_API_KEY` — required only for `fix` mode and eval. Never committed; load from `.env` (gitignored).
+- `ANTHROPIC_API_KEY` — used by `fix` for Claude-powered rewrites (falls back to rule-based without it) and by the eval harness. Never commit it; load from your environment or a gitignored `.env`.
 - `mcp-fit` spawns and queries servers with your consent; never auto-runs an untrusted server without an explicit command.
 
 ## Architecture
