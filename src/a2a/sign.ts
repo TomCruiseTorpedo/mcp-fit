@@ -57,6 +57,19 @@ export async function generateCardSigningKeys(
 // Signing
 // ---------------------------------------------------------------------------
 
+/**
+ * Derive the publishable JWKS from a private JWK by stripping private-key
+ * members — lets a deployer store ONLY the private key and serve/pin the
+ * public side without a second file.
+ */
+export function jwksFromPrivateJwk(privateJwk: JWK): { keys: JWK[] } {
+  const publicJwk: JWK = { ...privateJwk };
+  for (const member of ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k', 'oth'] as const) {
+    delete (publicJwk as Record<string, unknown>)[member];
+  }
+  return { keys: [publicJwk] };
+}
+
 export interface SignAgentCardOptions {
   /**
    * JWKS URL to embed in the protected header (`jku`) so clients can fetch

@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AgentCardJson } from '../card-types.js';
-import { generateCardSigningKeys, signAgentCard } from '../sign.js';
+import { generateCardSigningKeys, jwksFromPrivateJwk, signAgentCard } from '../sign.js';
 import { verifyCardSignature } from '../verify.js';
 
 const CARD: AgentCardJson = {
@@ -40,6 +40,20 @@ describe('generateCardSigningKeys', () => {
     expect(keys.publicJwk).toMatchObject({ kid: 'k-test', alg: 'ES256' });
     expect(keys.publicJwk).not.toHaveProperty('d'); // no private material
     expect(keys.jwks.keys).toEqual([keys.publicJwk]);
+  });
+});
+
+describe('jwksFromPrivateJwk', () => {
+  it('strips private members and the derived JWKS verifies a signature', async () => {
+    const keys = await generateCardSigningKeys();
+    const derived = jwksFromPrivateJwk(keys.privateJwk);
+    expect(derived.keys[0]).not.toHaveProperty('d');
+    expect(derived.keys[0]).toMatchObject({ kid: 'card-key-1' });
+    const signed = await signAgentCard(CARD, keys.privateJwk);
+    const report = await verifyCardSignature(signed, {
+      keyStore: { keys: { 'card-key-1': derived.keys[0]! } },
+    });
+    expect(report.tier).toBe('crypto-pinned');
   });
 });
 
