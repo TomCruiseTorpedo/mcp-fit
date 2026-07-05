@@ -178,9 +178,23 @@ uses its own axis vocabulary and schema (ADR-F).
 - Scenario: signature structural tier
   - GIVEN a card with a `signatures[]` entry whose `protected` header decodes with
     `alg`/`typ`/`kid` present
-  - WHEN linted
+  - WHEN linted (no verification keys supplied)
   - THEN the signature report carries `tier: "structural"`
-  - AND cryptographic verification is NOT claimed (crypto tiers are deferred, ADR-F4)
+  - AND cryptographic verification is NOT claimed
+- Scenario: crypto verification round-trip (ADR-F4)
+  - GIVEN a card signed per §8.4.2 (default-strip, exclude `signatures`, JCS, JWS)
+    and a trusted JWKS containing the signer's public key
+  - WHEN verified with `--verify-keys`
+  - THEN the signature report carries `tier: "crypto-pinned"`
+  - AND a card with explicit default values verifies identically to one without them
+- Scenario: tamper detection
+  - GIVEN a signed card whose content was modified after signing
+  - WHEN verified
+  - THEN NO tier is granted and an error-severity finding is raised
+- Scenario: jku is opt-in
+  - GIVEN a signed card whose header carries a `jku`
+  - WHEN verified WITHOUT `--verify-jku`
+  - THEN no network fetch occurs and the tier stays `structural`
 - Scenario: security declaration consistency
   - GIVEN a card whose `securityRequirements` (or legacy `security`) references a
     scheme absent from `securitySchemes`

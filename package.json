@@ -49,6 +49,8 @@
     "@anthropic-ai/sdk": "^0.102.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "ajv": "^8.17.1",
+    "canonicalize": "^3.0.0",
+    "jose": "^6.2.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

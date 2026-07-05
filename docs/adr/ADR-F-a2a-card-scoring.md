@@ -80,16 +80,26 @@ convention, not spec-derived:
 
 These live in `src/a2a/card-axes.ts` and are the sanctioned tuning point.
 
-### F4 — Signature verification is tiered; v1 ships the structural tier only
+### F4 — Signature verification is tiered; all three tiers shipped
 
-- `structural` (v1): `signatures[]` present, `protected`/`signature` are well-formed
-  base64url, decoded protected header carries `alg`/`typ`/`kid` (MUST, §8.4.2), `alg`
-  is not `none`.
-- `crypto-pinned` (deferred): JCS canonicalization (RFC 8785) + JWS verify against a
-  local trusted key store.
-- `crypto-jku` (deferred, opt-in network): fetch keys from the header `jku`. Note this
-  proves integrity + key possession, not provenance — the trust anchor is the key
-  store, which is why it stays opt-in.
+- `structural` (shipped v1): `signatures[]` present, `protected`/`signature` are
+  well-formed base64url, decoded protected header carries `alg`/`typ`/`kid` (MUST,
+  §8.4.2), `alg` is not `none`.
+- `crypto-pinned` (shipped 2026-07-05, `src/a2a/verify.ts`): §8.4.3 verification —
+  default-strip → exclude `signatures` → JCS (RFC 8785, `canonicalize`) → JWS verify
+  (`jose`) against a local trusted key store (`--verify-keys <jwks.json>`). The
+  acceptance gate is self-signed round-trip vectors (the spec's §8.4.2 example is not
+  self-contained — no public key is published), including the default-explicitness
+  stability property the stripping exists for.
+- `crypto-jku` (shipped 2026-07-05, opt-in network, `--verify-jku`): fetch keys from
+  the header `jku`. Proves integrity + key possession, not provenance — the trust
+  anchor is the key store, which is why it never runs by default and ranks below
+  `crypto-pinned`.
+- A FAILED cryptographic verification grants NO tier (worse than unverified — the
+  card was tampered with or signed over a different payload) and raises an
+  error-severity finding.
+- Unknown default-valued fields stripped during canonicalization are surfaced as an
+  info finding (the C4 cross-spec-version ambiguity), never silently eaten.
 
 The `SignatureReport.tier` field carries the tier so downstream consumers (gatewarden
 attach, W4) can gate on it.
@@ -115,8 +125,8 @@ gets `/.well-known/agent-card.json` appended per §8.2.
   (`scripts/score-engine.sha256`) are untouched by this change.
 - The lint helpers shared with the MCP rules (`areSimilarNames`) are exported from
   `src/lint/rules.ts` rather than duplicated.
-- Deferred, in order: crypto signature tiers (needs a frozen key-store type),
-  card fix-mode, behavioural card axes, gRPC/REST-specific interface probing.
+- Deferred, in order: card fix-mode, behavioural card axes, gRPC/REST-specific
+  interface probing. (Crypto signature tiers shipped 2026-07-05 — see F4.)
 
 ## Verification pins
 
