@@ -25,6 +25,7 @@ FILES=(
   # A2A card-scoring lane (ADR-F) — vendored verbatim into gatewarden/packages/score
   src/a2a/card-types.ts src/a2a/card-axes.ts src/a2a/card-rules.ts
   src/a2a/card-engine.ts src/a2a/card-scorer.ts src/a2a/signature.ts src/a2a/emit.ts
+  src/a2a/verify.ts
   schemas/card-compat.schema.json
 )
 
