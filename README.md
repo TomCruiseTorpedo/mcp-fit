@@ -107,9 +107,14 @@ node dist/cli.js card --url https://agent.example.com
 
 Seven card axes (`card-completeness`, `skill-namespacing`, `skill-selection-overlap`,
 `signature-hygiene`, `security-declaration-consistency`, `extension-hygiene`,
-`interface-hygiene`) — all deterministic; artifact is `card-compat.json`. Signature
-checking is the structural tier only (JWS shape + header MUSTs) — cryptographic
-verification is deferred by design. See `docs/adr/ADR-F-a2a-card-scoring.md`.
+`interface-hygiene`) — all deterministic; artifact is `card-compat.json`.
+
+Signature verification is tiered (A2A §8.4.3: default-strip → JCS RFC 8785 → JWS):
+structural by default; `--verify-keys <jwks.json>` verifies against a local trusted
+key store (`crypto-pinned` — the trust anchor); `--verify-jku` additionally fetches
+the header `jku` JWKS (network opt-in; proves integrity + key possession, not
+provenance). A failed verification grants no tier and raises an error finding.
+See `docs/adr/ADR-F-a2a-card-scoring.md`.
 
 ### After `npm link` or `npm install -g mcp-fit`
 

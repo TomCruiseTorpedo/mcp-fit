@@ -44,10 +44,11 @@ import { revalidate } from './fix/revalidate.js';
 import { computeDelta, formatDelta } from './fix/delta.js';
 import type { Scorecard } from './types.js';
 import { AXIS_NAMES } from './types.js';
-import type { CardScorecard } from './a2a/card-types.js';
+import type { AgentCardJson, CardScorecard } from './a2a/card-types.js';
 import { CARD_AXIS_NAMES } from './a2a/card-types.js';
 import { scoreCardLintOnly } from './a2a/card-scorer.js';
 import { emitCardCompat } from './a2a/emit.js';
+import { keyStoreFromJwks, verifyCardSignature } from './a2a/verify.js';
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json so the banner never drifts from the
@@ -73,8 +74,8 @@ USAGE
   mcp-fit scan [--out <dir>] --sse <url>
   mcp-fit fix  [--out <dir>] -- <command> [args...]
   mcp-fit fix  [--out <dir>] --sse <url>
-  mcp-fit card <path/to/agent-card.json> [--out <dir>]
-  mcp-fit card --url <url> [--out <dir>]
+  mcp-fit card <path/to/agent-card.json> [--out <dir>] [--verify-keys <jwks.json>] [--verify-jku]
+  mcp-fit card --url <url> [--out <dir>] [--verify-keys <jwks.json>] [--verify-jku]
   mcp-fit help
 
 SUBCOMMANDS
@@ -88,6 +89,11 @@ OPTIONS
   --sse <url>   Use SSE transport to the given URL instead of spawning a process.
   --url <url>   card only: fetch a live Agent Card over HTTPS (explicit network
                 opt-in). A bare origin gets /.well-known/agent-card.json appended.
+  --verify-keys <jwks.json>
+                card only: verify signatures against a local trusted JWKS
+                (crypto-pinned tier — the trust anchor, ADR-F4).
+  --verify-jku  card only: also fetch the header jku JWKS (crypto-jku tier;
+                network opt-in — proves integrity + key possession, NOT provenance).
 
 EXAMPLES
   # Score a local stdio server
@@ -220,6 +226,10 @@ interface ParsedArgs {
   cardPath: string | null;
   /** card: live Agent Card URL (explicit network opt-in, ADR-F6). */
   cardUrl: string | null;
+  /** card: JWKS file for the crypto-pinned verification tier (ADR-F4). */
+  cardVerifyKeys: string | null;
+  /** card: opt into fetching the header jku JWKS (crypto-jku tier, network). */
+  cardVerifyJku: boolean;
 }
 
 function parseCliArgs(argv: string[]): ParsedArgs {
@@ -230,9 +240,14 @@ function parseCliArgs(argv: string[]): ParsedArgs {
   let serverArgv: string[] = [];
   let cardPath: string | null = null;
   let cardUrl: string | null = null;
+  let cardVerifyKeys: string | null = null;
+  let cardVerifyJku = false;
 
   if (args.length === 0) {
-    return { subcommand: 'help', outDir, sse, serverArgv, cardPath, cardUrl };
+    return {
+      subcommand: 'help', outDir, sse, serverArgv, cardPath, cardUrl,
+      cardVerifyKeys, cardVerifyJku,
+    };
   }
 
   const sub = args.shift()!;
@@ -266,6 +281,17 @@ function parseCliArgs(argv: string[]): ParsedArgs {
         cardUrl = v;
       } else if (a.startsWith('--url=')) {
         cardUrl = a.slice('--url='.length);
+      } else if (a === '--verify-keys') {
+        const v = args[++j];
+        if (!v) {
+          process.stderr.write(`mcp-fit: --verify-keys requires a JWKS file path\n`);
+          process.exit(1);
+        }
+        cardVerifyKeys = v;
+      } else if (a.startsWith('--verify-keys=')) {
+        cardVerifyKeys = a.slice('--verify-keys='.length);
+      } else if (a === '--verify-jku') {
+        cardVerifyJku = true;
       } else if (a.startsWith('--')) {
         process.stderr.write(`mcp-fit: unknown option '${a}'. Run 'mcp-fit help'.\n`);
         process.exit(1);
@@ -276,7 +302,10 @@ function parseCliArgs(argv: string[]): ParsedArgs {
         process.exit(1);
       }
     }
-    return { subcommand, outDir, sse, serverArgv, cardPath, cardUrl };
+    return {
+      subcommand, outDir, sse, serverArgv, cardPath, cardUrl,
+      cardVerifyKeys, cardVerifyJku,
+    };
   }
 
   // Parse options until `--` separator
@@ -314,7 +343,10 @@ function parseCliArgs(argv: string[]): ParsedArgs {
   // Everything remaining is the server command
   serverArgv = args.slice(i);
 
-  return { subcommand, outDir, sse, serverArgv, cardPath, cardUrl };
+  return {
+    subcommand, outDir, sse, serverArgv, cardPath, cardUrl,
+    cardVerifyKeys, cardVerifyJku,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -422,9 +454,11 @@ function renderCardScorecard(scorecard: CardScorecard): string {
 
   line(`├${hr}┤`);
   const sigStr = signature.present
-    ? signature.tier !== null
-      ? `signed — ${signature.tier} (crypto unverified)`
-      : 'signed — structurally INVALID'
+    ? signature.tier === 'crypto-pinned' || signature.tier === 'crypto-jku'
+      ? `signed — VERIFIED (${signature.tier})`
+      : signature.tier === 'structural'
+        ? 'signed — structural (crypto unverified)'
+        : 'signed — verification FAILED'
     : 'unsigned';
   line(`│  SIGNATURE                      ${sigStr}`.padEnd(61) + '│');
   const wStr = `│  CARD LINT SCORE (deterministic)  ${aggregate.lintScore.toFixed(1)} / 10  [grade: ${grade(aggregate.lintScore)}]`;
@@ -483,6 +517,26 @@ async function cmdCard(opts: ParsedArgs): Promise<void> {
   }
 
   const scorecard = scoreCardLintOnly(parsed);
+
+  // Crypto verification tiers (ADR-F4) — only when explicitly requested.
+  if (opts.cardVerifyKeys !== null || opts.cardVerifyJku) {
+    const keyStore =
+      opts.cardVerifyKeys !== null
+        ? keyStoreFromJwks(JSON.parse(readFileSync(resolve(opts.cardVerifyKeys), 'utf8')))
+        : undefined;
+    process.stderr.write(
+      `mcp-fit: verifying signatures (${[
+        keyStore !== undefined ? 'pinned key store' : null,
+        opts.cardVerifyJku ? 'jku fetch enabled' : null,
+      ]
+        .filter(Boolean)
+        .join(' + ')})...\n`,
+    );
+    scorecard.signature = await verifyCardSignature(parsed as AgentCardJson, {
+      ...(keyStore !== undefined ? { keyStore } : {}),
+      fetchJku: opts.cardVerifyJku,
+    });
+  }
 
   const absOut = resolve(outDir);
   await mkdir(absOut, { recursive: true });
