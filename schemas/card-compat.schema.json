@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/TomCruiseTorpedo/mcp-fit/schemas/card-compat.schema.json",
+  "title": "mcp-fit A2A Agent Card Scorecard",
+  "description": "Machine-readable Agent Card scorecard emitted by mcp-fit as card-compat.json. Validates against the ADR-F contract. Independent of compat.schema.json — the MCP scorecard contract is frozen.",
+  "type": "object",
+  "required": ["schemaVersion", "card", "axes", "aggregate", "skills", "signature"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Card-scorecard schema version. Bump on breaking changes."
+    },
+    "card": {
+      "$ref": "#/$defs/CardMeta"
+    },
+    "axes": {
+      "type": "object",
+      "description": "Per-axis scores over the seven card-usability axes (ADR-F2). All deterministic.",
+      "required": [
+        "card-completeness",
+        "skill-namespacing",
+        "skill-selection-overlap",
+        "signature-hygiene",
+        "security-declaration-consistency",
+        "extension-hygiene",
+        "interface-hygiene"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "card-completeness": {
+          "$ref": "#/$defs/CardAxisScore",
+          "description": "REQUIRED-field presence per A2A proto field_behavior annotations."
+        },
+        "skill-namespacing": {
+          "$ref": "#/$defs/CardAxisScore",
+          "description": "Skill name/description discoverability (transferred from MCP namespacing)."
+        },
+        "skill-selection-overlap": {
+          "$ref": "#/$defs/CardAxisScore",
+          "description": "Pairwise skill id/name/tag ambiguity (transferred from MCP tool-selection-confusion, statically gradable on cards)."
+        },
+        "signature-hygiene": {
+          "$ref": "#/$defs/CardAxisScore",
+          "description": "JWS signature presence + structural validity (A2A spec section 8.4)."
+        },
+        "security-declaration-consistency": {
+          "$ref": "#/$defs/CardAxisScore",
+          "description": "Security requirements resolve to declared schemes; schemes carry REQUIRED subfields."
+        },
+        "extension-hygiene": {
+          "$ref": "#/$defs/CardAxisScore",
+          "description": "Extension URI validity, descriptions, required:true surfacing (spec section 4.4.4)."
+        },
+        "interface-hygiene": {
+          "$ref": "#/$defs/CardAxisScore",
+          "description": "Interface URL absoluteness/HTTPS, known protocol bindings, versions (spec section 5.2)."
+        }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "description": "Weighted aggregate over all seven axes (ADR-F3 weights).",
+      "required": ["lintScore", "weighted"],
+      "additionalProperties": false,
+      "properties": {
+        "lintScore": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Deterministic headline — every card axis is deterministic, so this is the badge."
+        },
+        "weighted": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Identical to lintScore in v1 (no eval split on the card side)."
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Per-skill findings list, keyed by skill id (name fallback).",
+      "items": {
+        "$ref": "#/$defs/SkillReport"
+      }
+    },
+    "signature": {
+      "$ref": "#/$defs/SignatureReport"
+    }
+  },
+  "$defs": {
+    "CardMeta": {
+      "type": "object",
+      "description": "Identity of the scored Agent Card.",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Card name ('unknown' when absent from the card)."
+        },
+        "version": {
+          "type": "string",
+          "description": "Card version ('unknown' when absent from the card)."
+        }
+      }
+    },
+    "CardAxisScore": {
+      "type": "object",
+      "required": ["score", "kind", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "1-10 ordinal; never null — every card axis is statically gradable."
+        },
+        "kind": {
+          "const": "deterministic",
+          "description": "Card axes are always deterministic in v1."
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardFinding"
+          }
+        }
+      }
+    },
+    "CardFinding": {
+      "type": "object",
+      "required": ["axis", "severity", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "description": "Lint rule identifier for traceability."
+        },
+        "axis": {
+          "type": "string",
+          "enum": [
+            "card-completeness",
+            "skill-namespacing",
+            "skill-selection-overlap",
+            "signature-hygiene",
+            "security-declaration-consistency",
+            "extension-hygiene",
+            "interface-hygiene"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning", "info"]
+        },
+        "message": {
+          "type": "string"
+        },
+        "skill": {
+          "type": "string",
+          "description": "Offending skill id (or name fallback), if applicable."
+        },
+        "field": {
+          "type": "string",
+          "description": "Offending card field path, e.g. 'supportedInterfaces[0].url'."
+        }
+      }
+    },
+    "SkillReport": {
+      "type": "object",
+      "required": ["id", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Skill id (name fallback, positional fallback)."
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardFinding"
+          }
+        }
+      }
+    },
+    "SignatureReport": {
+      "type": "object",
+      "description": "Structural signature analysis (ADR-F4). The 'structural' tier never claims cryptographic validity.",
+      "required": ["present", "tier", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "tier": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["structural", "crypto-pinned", "crypto-jku"]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Highest tier PASSED; null when absent or structurally invalid. Crypto tiers are deferred (ADR-F4)."
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardFinding"
+          }
+        }
+      }
+    }
+  }
+}

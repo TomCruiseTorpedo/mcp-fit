@@ -1,0 +1,68 @@
+{
+  "name": "Recipe Research Agent",
+  "description": "Finds, adapts, and nutritionally analyses recipes from public sources. Returns structured recipe data; reports an explicit error part when a source is unreachable.",
+  "version": "2.1.0",
+  "provider": {
+    "organization": "Example Kitchen Labs",
+    "url": "https://kitchen.example.com"
+  },
+  "supportedInterfaces": [
+    {
+      "url": "https://agent.kitchen.example.com/a2a/v1",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "extensions": [
+      {
+        "uri": "https://kitchen.example.com/a2a/ext/nutrition-units/v1",
+        "description": "Optional negotiation of metric vs imperial units in nutrition DataParts.",
+        "required": false
+      }
+    ]
+  },
+  "defaultInputModes": ["text/plain", "application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "recipe-find",
+      "name": "Find recipes",
+      "description": "Searches public recipe sources for dishes matching cuisine, ingredient, and dietary constraints. Fails with a structured error when no source responds.",
+      "tags": ["recipes", "search", "cooking"],
+      "examples": ["Find three vegan ramen recipes under 30 minutes."]
+    },
+    {
+      "id": "recipe-adapt",
+      "name": "Adapt a recipe",
+      "description": "Rewrites a recipe for a dietary constraint or serving count, preserving technique steps and flagging substitutions it is not confident about.",
+      "tags": ["recipes", "dietary", "substitution"],
+      "examples": ["Make this lasagna gluten-free for six people."]
+    },
+    {
+      "id": "recipe-nutrition",
+      "name": "Nutrition analysis",
+      "description": "Computes per-serving macros and allergens for a recipe as a structured DataPart. Unknown ingredients are listed explicitly rather than estimated silently.",
+      "tags": ["nutrition", "macros", "allergens"],
+      "examples": ["Estimate the macros for this recipe at four servings."],
+      "securityRequirements": [{ "kitchenApiKey": [] }]
+    }
+  ],
+  "securitySchemes": {
+    "kitchenApiKey": {
+      "apiKeySecurityScheme": {
+        "location": "header",
+        "name": "X-Kitchen-Key"
+      }
+    }
+  },
+  "securityRequirements": [{ "kitchenApiKey": [] }],
+  "signatures": [
+    {
+      "protected": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpPU0UiLCJraWQiOiJjYXJkLWtleS0xIn0",
+      "signature": "bm90LWEtcmVhbC1zaWduYXR1cmUtanVzdC1zdHJ1Y3R1cmFsbHktdmFsaWQ"
+    }
+  ]
+}

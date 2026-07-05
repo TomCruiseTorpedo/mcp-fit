@@ -42,8 +42,12 @@ const AXIS_WEIGHTS: Readonly<Record<AxisName, number>> = {
   'error-helpfulness': 1.0,
 };
 
-/** Deduction per finding severity when computing a raw axis score. */
-const SEVERITY_DEDUCTION: Readonly<Record<FindingSeverity, number>> = {
+/**
+ * Deduction per finding severity when computing a raw axis score.
+ * Exported for reuse by the A2A card engine (ADR-F2) — the severity→deduction
+ * contract must stay identical across both scoring surfaces.
+ */
+export const SEVERITY_DEDUCTION: Readonly<Record<FindingSeverity, number>> = {
   error: 2,
   warning: 1,
   info: 0,

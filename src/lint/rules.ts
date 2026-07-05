@@ -57,8 +57,12 @@ function normaliseName(s: string): string {
   return s.toLowerCase().replace(/[_\-\s]+/g, '');
 }
 
-/** Return true when two tool names are suspiciously similar. */
-function areSimilarNames(a: string, b: string): boolean {
+/**
+ * Return true when two tool names are suspiciously similar.
+ * Exported for reuse by the A2A card rules (skill-selection-overlap, ADR-F) —
+ * the similarity contract must stay identical across both rule sets.
+ */
+export function areSimilarNames(a: string, b: string): boolean {
   const na = normaliseName(a);
   const nb = normaliseName(b);
   if (na === nb) return true;
