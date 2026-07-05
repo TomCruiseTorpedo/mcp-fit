@@ -157,3 +157,38 @@ The system MUST be runnable via `npx mcp-fit <subcommand>` with a one-command qu
   - GIVEN a fresh environment
   - WHEN a user runs the documented `npx mcp-fit` quickstart against the strawman
   - THEN they get a rendered scorecard with no prior install step
+
+### Requirement: A2A Agent Card Scoring
+
+The system MUST score an A2A v1.0 Agent Card for agent-usability with the same
+deterministic, offline, keyless guarantees as the MCP static lint, emitting a
+`card-compat.json` artifact that validates against `schemas/card-compat.schema.json`.
+The shipped MCP contract (`AxisName`, `compat.schema.json`) is frozen; card scoring
+uses its own axis vocabulary and schema (ADR-F).
+
+- Scenario: deterministic card lint
+  - GIVEN the same Agent Card JSON twice
+  - WHEN scored via `mcp-fit card`
+  - THEN findings, per-axis scores, and the aggregate are identical
+- Scenario: REQUIRED-field floor
+  - GIVEN a card missing a proto-REQUIRED field (e.g. `skills` or an interface `url`)
+  - WHEN linted
+  - THEN an error-severity finding names the missing field under `card-completeness`
+    or `interface-hygiene`
+- Scenario: signature structural tier
+  - GIVEN a card with a `signatures[]` entry whose `protected` header decodes with
+    `alg`/`typ`/`kid` present
+  - WHEN linted
+  - THEN the signature report carries `tier: "structural"`
+  - AND cryptographic verification is NOT claimed (crypto tiers are deferred, ADR-F4)
+- Scenario: security declaration consistency
+  - GIVEN a card whose `securityRequirements` (or legacy `security`) references a
+    scheme absent from `securitySchemes`
+  - WHEN linted
+  - THEN an error-severity finding names the undeclared scheme
+- Scenario: offline by default
+  - GIVEN a local card file path
+  - WHEN scored
+  - THEN no network request is made
+  - AND fetching a live card requires the explicit `--url` flag (well-known path
+    appended for bare origins per A2A §8.2)
