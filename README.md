@@ -90,6 +90,27 @@ node dist/cli.js scan --sse http://localhost:3001/sse
 node dist/cli.js fix  --sse http://localhost:3001/sse --out ./out
 ```
 
+### A2A Agent Card scoring
+
+`mcp-fit` also scores [A2A](https://a2a-protocol.org/) v1.0 Agent Cards — the discovery
+document a remote agent publishes at `/.well-known/agent-card.json`. Deterministic,
+keyless, and offline by default; fetching a live card is an explicit `--url` opt-in.
+
+```bash
+# bad card: ~5.3 / 10 (C) — missing REQUIRED fields, duplicate skill ids, unsigned
+node dist/cli.js card fixtures/agent-cards/strawman-card.json
+# clean card: 10 / 10 (A), signature structural tier passed
+node dist/cli.js card fixtures/agent-cards/clean-card.json
+# live card (network opt-in; bare origins get /.well-known/agent-card.json appended)
+node dist/cli.js card --url https://agent.example.com
+```
+
+Seven card axes (`card-completeness`, `skill-namespacing`, `skill-selection-overlap`,
+`signature-hygiene`, `security-declaration-consistency`, `extension-hygiene`,
+`interface-hygiene`) — all deterministic; artifact is `card-compat.json`. Signature
+checking is the structural tier only (JWS shape + header MUSTs) — cryptographic
+verification is deferred by design. See `docs/adr/ADR-F-a2a-card-scoring.md`.
+
 ### After `npm link` or `npm install -g mcp-fit`
 
 ```bash
@@ -105,6 +126,8 @@ mcp-fit scan [--out <dir>] -- <command> [args...]
 mcp-fit scan [--out <dir>] --sse <url>
 mcp-fit fix  [--out <dir>] -- <command> [args...]
 mcp-fit fix  [--out <dir>] --sse <url>
+mcp-fit card <path/to/agent-card.json> [--out <dir>]
+mcp-fit card --url <url> [--out <dir>]
 mcp-fit help
 ```
 
@@ -112,6 +135,7 @@ mcp-fit help
 |--------|---------|-------------|
 | `--out <dir>` | `.` | Directory for emitted artifacts |
 | `--sse <url>` | — | SSE transport URL (instead of `-- cmd`) |
+| `--url <url>` | — | `card` only: fetch a live Agent Card (explicit network opt-in) |
 
 ## Scorecard axes
 
@@ -132,6 +156,7 @@ The lint score is deterministic and badge-able. The eval score (stochastic, via 
 |------|--------|---------|
 | `compat.json` | `schemas/compat.schema.json` | Full scorecard (all axes, findings, aggregate) |
 | `evals.jsonl` | `schemas/evals.schema.json` | Per-task agent traces (one JSON object per line) |
+| `card-compat.json` | `schemas/card-compat.schema.json` | A2A Agent Card scorecard (card axes, findings, signature report) |
 
 ## Development
 

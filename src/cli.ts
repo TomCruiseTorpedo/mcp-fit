@@ -4,6 +4,7 @@
  * Subcommands:
  *   scan   Connect to an MCP server, lint it, score it, and emit compat.json.
  *   fix    Scan + auto-rewrite descriptions + report before/after delta.
+ *   card   Score an A2A Agent Card JSON (offline; --url gates network fetch).
  *   help   Show usage.
  *
  * Usage (stdio server):
@@ -14,11 +15,17 @@
  *   mcp-fit scan [--out <dir>] --sse <url>
  *   mcp-fit fix  [--out <dir>] --sse <url>
  *
+ * Usage (A2A Agent Card, ADR-F):
+ *   mcp-fit card <path/to/agent-card.json> [--out <dir>]
+ *   mcp-fit card --url <https://agent.example.com> [--out <dir>]
+ *
  * Options:
  *   --out <dir>   Directory for emitted artifacts (default: .)
  *   --sse <url>   SSE transport URL (instead of stdio `-- cmd`)
+ *   --url <url>   Fetch a live Agent Card (card subcommand only; explicit
+ *                 network opt-in — bare origins get /.well-known/agent-card.json)
  *
- * Spec: CLI & Distribution (specs/mcp-fit/spec.md §Requirement: CLI & Distribution)
+ * Spec: CLI & Distribution + A2A Agent Card Scoring (specs/mcp-fit/spec.md)
  * Owns: src/cli.ts
  */
 
@@ -37,6 +44,10 @@ import { revalidate } from './fix/revalidate.js';
 import { computeDelta, formatDelta } from './fix/delta.js';
 import type { Scorecard } from './types.js';
 import { AXIS_NAMES } from './types.js';
+import type { CardScorecard } from './a2a/card-types.js';
+import { CARD_AXIS_NAMES } from './a2a/card-types.js';
+import { scoreCardLintOnly } from './a2a/card-scorer.js';
+import { emitCardCompat } from './a2a/emit.js';
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json so the banner never drifts from the
@@ -62,16 +73,21 @@ USAGE
   mcp-fit scan [--out <dir>] --sse <url>
   mcp-fit fix  [--out <dir>] -- <command> [args...]
   mcp-fit fix  [--out <dir>] --sse <url>
+  mcp-fit card <path/to/agent-card.json> [--out <dir>]
+  mcp-fit card --url <url> [--out <dir>]
   mcp-fit help
 
 SUBCOMMANDS
   scan   Connect, lint, score, and emit compat.json to --out directory.
   fix    Scan + auto-rewrite tool descriptions + print before/after delta.
+  card   Score an A2A v1.0 Agent Card (deterministic, keyless, offline by default).
   help   Show this message.
 
 OPTIONS
   --out <dir>   Output directory for compat.json (and evals.jsonl).  [default: .]
   --sse <url>   Use SSE transport to the given URL instead of spawning a process.
+  --url <url>   card only: fetch a live Agent Card over HTTPS (explicit network
+                opt-in). A bare origin gets /.well-known/agent-card.json appended.
 
 EXAMPLES
   # Score a local stdio server
@@ -87,9 +103,16 @@ EXAMPLES
   #   git clone https://github.com/TomCruiseTorpedo/mcp-fit && cd mcp-fit && npm i
   mcp-fit scan -- fixtures/strawman-server/node_modules/.bin/tsx fixtures/strawman-server/server.ts
 
+  # Score a local A2A Agent Card (offline)
+  mcp-fit card fixtures/agent-cards/strawman-card.json
+
+  # Fetch and score a live Agent Card (explicit network opt-in)
+  mcp-fit card --url https://agent.example.com
+
 ARTIFACTS
-  compat.json   Full scorecard (validates against schemas/compat.schema.json)
-  evals.jsonl   Task traces from dynamic eval (empty when eval is skipped)
+  compat.json        Full MCP scorecard (validates against schemas/compat.schema.json)
+  evals.jsonl        Task traces from dynamic eval (empty when eval is skipped)
+  card-compat.json   A2A card scorecard (validates against schemas/card-compat.schema.json)
 
 Axes (lower = agent unfriendly):
   namespacing               tool-choice — distinguishable, well-documented paths
@@ -97,6 +120,15 @@ Axes (lower = agent unfriendly):
   param-strictness          call-signature — unambiguous signatures, clear required args
   output-leanness           output-contract — typed values vs labeled prose / token bloat
   error-helpfulness         provider-only — errors that guide recovery
+
+Card axes (mcp-fit card, all deterministic — ADR-F):
+  card-completeness                 REQUIRED-field floor (proto annotations)
+  skill-namespacing                 skill name/description discoverability
+  skill-selection-overlap           pairwise skill id/name/tag ambiguity
+  signature-hygiene                 JWS presence + structural validity (§8.4)
+  security-declaration-consistency  requirements ⊆ declared schemes
+  extension-hygiene                 extension URIs, descriptions, required:true gates
+  interface-hygiene                 absolute HTTPS urls, known bindings, versions
 `;
 
 // ---------------------------------------------------------------------------
@@ -179,11 +211,15 @@ function renderScorecard(scorecard: Scorecard): string {
 // ---------------------------------------------------------------------------
 
 interface ParsedArgs {
-  subcommand: 'scan' | 'fix' | 'help';
+  subcommand: 'scan' | 'fix' | 'card' | 'help';
   outDir: string;
   sse: string | null;
   /** The spawned-server argv (everything after `--`). */
   serverArgv: string[];
+  /** card: local Agent Card JSON path (offline). */
+  cardPath: string | null;
+  /** card: live Agent Card URL (explicit network opt-in, ADR-F6). */
+  cardUrl: string | null;
 }
 
 function parseCliArgs(argv: string[]): ParsedArgs {
@@ -192,18 +228,55 @@ function parseCliArgs(argv: string[]): ParsedArgs {
   let outDir = '.';
   let sse: string | null = null;
   let serverArgv: string[] = [];
+  let cardPath: string | null = null;
+  let cardUrl: string | null = null;
 
   if (args.length === 0) {
-    return { subcommand: 'help', outDir, sse, serverArgv };
+    return { subcommand: 'help', outDir, sse, serverArgv, cardPath, cardUrl };
   }
 
   const sub = args.shift()!;
   if (sub === 'scan') subcommand = 'scan';
   else if (sub === 'fix') subcommand = 'fix';
+  else if (sub === 'card') subcommand = 'card';
   else if (sub === 'help' || sub === '--help' || sub === '-h') subcommand = 'help';
   else {
     process.stderr.write(`mcp-fit: unknown subcommand '${sub}'. Run 'mcp-fit help'.\n`);
     process.exit(1);
+  }
+
+  if (subcommand === 'card') {
+    for (let j = 0; j < args.length; j++) {
+      const a = args[j]!;
+      if (a === '--out' || a === '-o') {
+        const v = args[++j];
+        if (!v) {
+          process.stderr.write(`mcp-fit: --out requires a directory argument\n`);
+          process.exit(1);
+        }
+        outDir = v;
+      } else if (a.startsWith('--out=')) {
+        outDir = a.slice('--out='.length);
+      } else if (a === '--url') {
+        const v = args[++j];
+        if (!v) {
+          process.stderr.write(`mcp-fit: --url requires a URL argument\n`);
+          process.exit(1);
+        }
+        cardUrl = v;
+      } else if (a.startsWith('--url=')) {
+        cardUrl = a.slice('--url='.length);
+      } else if (a.startsWith('--')) {
+        process.stderr.write(`mcp-fit: unknown option '${a}'. Run 'mcp-fit help'.\n`);
+        process.exit(1);
+      } else if (cardPath === null) {
+        cardPath = a;
+      } else {
+        process.stderr.write(`mcp-fit: card takes a single path argument (got '${a}').\n`);
+        process.exit(1);
+      }
+    }
+    return { subcommand, outDir, sse, serverArgv, cardPath, cardUrl };
   }
 
   // Parse options until `--` separator
@@ -241,7 +314,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
   // Everything remaining is the server command
   serverArgv = args.slice(i);
 
-  return { subcommand, outDir, sse, serverArgv };
+  return { subcommand, outDir, sse, serverArgv, cardPath, cardUrl };
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +391,107 @@ async function cmdScan(opts: ParsedArgs): Promise<void> {
       // Ignore close errors — server process may have already exited.
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// card implementation (ADR-F)
+// ---------------------------------------------------------------------------
+
+function renderCardScorecard(scorecard: CardScorecard): string {
+  const { card, axes, aggregate, signature } = scorecard;
+  const lines: string[] = [];
+
+  const line = (s: string): void => void lines.push(s);
+  const hr = '─'.repeat(60);
+
+  line(`┌${hr}┐`);
+  line(`│  mcp-fit card scorecard · ${card.name} v${card.version}`.padEnd(61) + '│');
+  line(`├${hr}┤`);
+  line((`│  ${'Axis'.padEnd(34)} ${'Score'.padEnd(7)} ${'Grade'.padEnd(5)} Findings`).padEnd(61) + '│');
+  line(`├${hr}┤`);
+
+  for (const axis of CARD_AXIS_NAMES) {
+    const axisScore = axes[axis];
+    const errCnt = axisScore.findings.filter((f) => f.severity === 'error').length;
+    const warnCnt = axisScore.findings.filter((f) => f.severity === 'warning').length;
+    const findingStr = errCnt > 0 || warnCnt > 0 ? `${errCnt}err ${warnCnt}warn` : 'clean';
+    const row =
+      `│  ${axis.padEnd(34)} ${String(axisScore.score).padEnd(3)}/10  ${grade(axisScore.score).padEnd(4)}  ${findingStr}`;
+    line(row.padEnd(61) + '│');
+  }
+
+  line(`├${hr}┤`);
+  const sigStr = signature.present
+    ? signature.tier !== null
+      ? `signed — ${signature.tier} (crypto unverified)`
+      : 'signed — structurally INVALID'
+    : 'unsigned';
+  line(`│  SIGNATURE                      ${sigStr}`.padEnd(61) + '│');
+  const wStr = `│  CARD LINT SCORE (deterministic)  ${aggregate.lintScore.toFixed(1)} / 10  [grade: ${grade(aggregate.lintScore)}]`;
+  line(wStr.padEnd(61) + '│');
+  line(`└${hr}┘`);
+
+  return lines.join('\n');
+}
+
+/** Resolve the effective card URL: bare origins get the well-known path (§8.2). */
+function resolveCardUrl(raw: string): string {
+  const parsed = new URL(raw); // throws on invalid — caught by main()
+  if (parsed.pathname === '/' || parsed.pathname === '') {
+    parsed.pathname = '/.well-known/agent-card.json';
+  }
+  return parsed.toString();
+}
+
+async function cmdCard(opts: ParsedArgs): Promise<void> {
+  const { outDir, cardPath, cardUrl } = opts;
+
+  if (cardPath !== null && cardUrl !== null) {
+    process.stderr.write(`mcp-fit: card takes a path OR --url, not both.\n`);
+    process.exit(1);
+  }
+  if (cardPath === null && cardUrl === null) {
+    process.stderr.write(
+      `mcp-fit: card needs an agent-card.json path, or --url <url> to fetch one.\n`,
+    );
+    process.exit(1);
+  }
+
+  let raw: string;
+  if (cardPath !== null) {
+    // Offline path — no network (spec: A2A Agent Card Scoring, scenario "offline by default").
+    raw = readFileSync(resolve(cardPath), 'utf8');
+  } else {
+    const target = resolveCardUrl(cardUrl!);
+    process.stderr.write(`mcp-fit: fetching ${target} ...\n`);
+    const response = await fetch(target, {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error(`fetching agent card failed: HTTP ${response.status} for ${target}`);
+    }
+    raw = await response.text();
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      `input is not valid JSON — an Agent Card must be a single JSON document`,
+    );
+  }
+
+  const scorecard = scoreCardLintOnly(parsed);
+
+  const absOut = resolve(outDir);
+  await mkdir(absOut, { recursive: true });
+  const cardCompatPath = join(absOut, 'card-compat.json');
+  await emitCardCompat(scorecard, cardCompatPath);
+
+  process.stdout.write(renderCardScorecard(scorecard) + '\n');
+  process.stderr.write(`\nmcp-fit: artifacts written to ${absOut}/\n`);
+  process.stderr.write(`  card-compat.json   (card scorecard)\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +578,10 @@ export async function main(): Promise<void> {
 
     case 'fix':
       await cmdFix(opts);
+      return;
+
+    case 'card':
+      await cmdCard(opts);
       return;
   }
 }
