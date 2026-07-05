@@ -20,7 +20,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."   # package/repo root, so src/... paths resolve
 MANIFEST="scripts/score-engine.sha256"
-FILES=(src/models.ts src/eval/harness.ts src/fix/rewriter.ts src/score/rubric.ts)
+FILES=(
+  src/models.ts src/eval/harness.ts src/fix/rewriter.ts src/score/rubric.ts
+  # A2A card-scoring lane (ADR-F) — vendored verbatim into gatewarden/packages/score
+  src/a2a/card-types.ts src/a2a/card-axes.ts src/a2a/card-rules.ts
+  src/a2a/card-engine.ts src/a2a/card-scorer.ts src/a2a/signature.ts src/a2a/emit.ts
+  schemas/card-compat.schema.json
+)
 
 if [[ "${1:-}" == "--update" ]]; then
   shasum -a 256 "${FILES[@]}" > "$MANIFEST"
