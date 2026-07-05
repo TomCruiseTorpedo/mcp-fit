@@ -45,9 +45,11 @@
     "prepare": "npm run build"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.1.0",
     "@anthropic-ai/sdk": "^0.102.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "ajv": "^8.17.1"
+    "ajv": "^8.17.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
