@@ -53,7 +53,7 @@ Expected output (lint-only — the deterministic badge scores only the axes stat
 └────────────────────────────────────────────────────────────┘
 ```
 
-The `—` axes are **eval-only**: static lint cannot grade runtime output shape, error quality, or tool-selection confusion, so the deterministic badge does not claim a verdict on them. Scoring those stochastically uses the dynamic eval harness (`src/eval/`, needs `ANTHROPIC_API_KEY`), which is currently programmatic-only — not yet exposed as a CLI flag.
+The `—` axes are **eval-only**: static lint cannot grade runtime output shape, error quality, or tool-selection confusion, so the deterministic badge does not claim a verdict on them. Scoring those stochastically uses the dynamic eval harness (`src/eval/`), which is currently programmatic-only — not yet exposed as a CLI flag. Two eval drivers exist behind the same `Harness` interface: `ClaudeHarness` (Anthropic SDK, needs `ANTHROPIC_API_KEY`) and `AcpHarness` (drives any [Agent Client Protocol](https://agentclientprotocol.com/) registry coding agent — Claude Code, Gemini CLI, and 25+ others — as the eval driver; token cost is reported as `null` because ACP does not expose cumulative usage).
 
 ### Keyless red→green (no API key)
 
@@ -114,7 +114,15 @@ structural by default; `--verify-keys <jwks.json>` verifies against a local trus
 key store (`crypto-pinned` — the trust anchor); `--verify-jku` additionally fetches
 the header `jku` JWKS (network opt-in; proves integrity + key possession, not
 provenance). A failed verification grants no tier and raises an error finding.
-See `docs/adr/ADR-F-a2a-card-scoring.md`.
+
+The signer side ships as a library: `signAgentCard` / `generateCardSigningKeys` /
+`jwksFromPrivateJwk` (`src/a2a/sign.ts`) sign a card per §8.4.2 using the SAME
+canonicalization the verifier applies — the two cannot drift. See
+`docs/adr/ADR-F-a2a-card-scoring.md`.
+
+> **npm note:** the published `mcp-fit` package (0.1.1) predates the A2A card
+> lane — `card`, the verify flags, and the signing library are on `main` and
+> will ship in the next release. Until then, use the clone-based commands above.
 
 ### After `npm link` or `npm install -g mcp-fit`
 
@@ -131,8 +139,8 @@ mcp-fit scan [--out <dir>] -- <command> [args...]
 mcp-fit scan [--out <dir>] --sse <url>
 mcp-fit fix  [--out <dir>] -- <command> [args...]
 mcp-fit fix  [--out <dir>] --sse <url>
-mcp-fit card <path/to/agent-card.json> [--out <dir>]
-mcp-fit card --url <url> [--out <dir>]
+mcp-fit card <path/to/agent-card.json> [--out <dir>] [--verify-keys <jwks.json>] [--verify-jku]
+mcp-fit card --url <url> [--out <dir>] [--verify-keys <jwks.json>] [--verify-jku]
 mcp-fit help
 ```
 
@@ -141,6 +149,8 @@ mcp-fit help
 | `--out <dir>` | `.` | Directory for emitted artifacts |
 | `--sse <url>` | — | SSE transport URL (instead of `-- cmd`) |
 | `--url <url>` | — | `card` only: fetch a live Agent Card (explicit network opt-in) |
+| `--verify-keys <jwks.json>` | — | `card` only: verify signatures against a trusted JWKS (`crypto-pinned` tier) |
+| `--verify-jku` | off | `card` only: also fetch the header `jku` JWKS (`crypto-jku` tier; network opt-in) |
 
 ## Scorecard axes
 
@@ -179,17 +189,24 @@ npm test            # vitest run
 ## Architecture
 
 ```
-src/connect/   MCP client, transports, introspect, proxy   B-001
-src/lint/      deterministic rule engine + rules            B-002
-fixtures/      strawman bad server + task corpus            B-003
-src/report/    artifact emitter + schema validation         B-004
-src/eval/      dynamic-eval runner (Claude SDK harness)     B-005
-src/score/     scorer + contract-rubric loop                B-006
-src/fix/       description rewriter + re-validate + delta   B-007
-src/cli.ts     CLI entry point (this bead)                  B-008
+src/connect/   MCP client, transports, introspect, proxy    B-001
+src/lint/      deterministic rule engine + rules             B-002
+fixtures/      strawman servers, agent cards, task corpus    B-003
+src/report/    artifact emitter + schema validation          B-004
+src/eval/      dynamic-eval runner (Claude + ACP harnesses)  B-005
+src/score/     scorer + contract-rubric loop                 B-006
+src/fix/       description rewriter + re-validate + delta    B-007
+src/cli.ts     CLI entry point                               B-008
+src/a2a/       A2A Agent Card lint/score, verify + sign      ADR-F
 ```
 
 Source of truth: `specs/mcp-fit/spec.md` · Implementation plan: `plan.md` · Issue tracking: `tasks.md`
+
+## Related
+
+`mcp-fit` is the **score** third of a trilogy: [leasebroker](https://github.com/TomCruiseTorpedo/leasebroker)
+governs what an agent may do (capability leases), and [gatewarden](https://github.com/TomCruiseTorpedo/gatewarden)
+fuses both into one in-path gateway — for MCP servers and, via the A2A lanes, remote agents.
 
 ## License
 
