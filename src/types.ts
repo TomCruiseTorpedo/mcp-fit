@@ -24,7 +24,7 @@
 export const COMPAT_SCHEMA_VERSION = '1.0.0';
 
 /** Bump this when the evals.jsonl entry shape changes in a breaking way. */
-export const EVALS_SCHEMA_VERSION = '1.0.0';
+export const EVALS_SCHEMA_VERSION = '1.1.0';
 
 // ---------------------------------------------------------------------------
 // Server metadata
@@ -231,16 +231,24 @@ export interface RubricResult {
  * - `multiStep`: true when the task requires ≥2 sequential tool calls.
  * - `lowSignal`: true when the task is a trivial single-call (flagged per
  *   the selectivity principle — does not dominate the aggregate).
+ * - `tokenCost`: total tokens consumed, or null when the harness cannot
+ *   measure token usage (ACP agents report context occupancy, not cumulative
+ *   cost — ADR-G). Null means "not measured", never "zero".
+ * - `degraded`: true when the harness could not fully observe the run
+ *   (missing rawInput/rawOutput on tool calls, or tool activity that could
+ *   not be attributed to the target server). Degraded traces should not
+ *   feed before/after claims (ADR-G).
  */
 export interface TaskTrace {
   taskId: string;
   multiStep: boolean;
   lowSignal: boolean;
   pass: boolean;
-  tokenCost: number;
+  tokenCost: number | null;
   chosenTools: string[];
   provenanceEvents: ProvenanceEvent[];
   rubric: RubricResult;
+  degraded?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -192,3 +192,37 @@ uses its own axis vocabulary and schema (ADR-F).
   - THEN no network request is made
   - AND fetching a live card requires the explicit `--url` flag (well-known path
     appended for bare origins per A2A §8.2)
+
+### Requirement: ACP Eval Harness
+
+The system MUST provide an `AcpHarness` implementing the ADR-B `Harness`
+interface that drives any ACP-registry coding agent as the eval driver: the
+agent is spawned as a subprocess, receives the target MCP server via
+`session/new mcpServers`, and the harness reconstructs the tool-call
+transcript by observing `tool_call`/`tool_call_update` session updates
+(ADR-G). No ACP types leak outside `src/eval/acp-harness.ts` and
+`src/eval/acp-agents.ts`.
+
+- Scenario: observe-don't-intercept
+  - GIVEN an ACP agent that calls target-server tools
+  - WHEN a task runs
+  - THEN the trace's `chosenTools` and provenance events are reconstructed
+    from tool-call updates (folded by `toolCallId`)
+  - AND `sandbox.callTool()` is never invoked
+- Scenario: token cost is honest
+  - GIVEN any ACP run
+  - WHEN the trace is emitted
+  - THEN `tokenCost` is null (not measured), never a fabricated number
+- Scenario: degraded-trace detection
+  - GIVEN an agent that omits `rawInput` on a tool call, or whose tool
+    activity cannot be attributed to any target-server tool
+  - WHEN the trace is emitted
+  - THEN `degraded` is true
+- Scenario: no-contact detection
+  - GIVEN an agent that never issues a tool call
+  - WHEN the trace is emitted
+  - THEN `pass` is false AND `degraded` is true
+- Scenario: headless permissions
+  - GIVEN an agent that raises `session/request_permission`
+  - WHEN the harness answers
+  - THEN the `allow_once`-kind option is preferred and the grant is logged

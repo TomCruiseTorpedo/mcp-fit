@@ -34,9 +34,9 @@
       "description": "Whether the agent completed the task successfully."
     },
     "tokenCost": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "minimum": 0,
-      "description": "Total tokens consumed by the agent during this task."
+      "description": "Total tokens consumed by the agent during this task. Null when the harness cannot measure token usage (e.g. ACP agents — ADR-G); null means not-measured, never zero."
     },
     "chosenTools": {
       "type": "array",
@@ -54,6 +54,10 @@
     },
     "rubric": {
       "$ref": "#/$defs/RubricResult"
+    },
+    "degraded": {
+      "type": "boolean",
+      "description": "True when the harness could not fully observe the run (optional; absent means false). Degraded traces should not feed before/after claims (ADR-G)."
     }
   },
   "$defs": {
