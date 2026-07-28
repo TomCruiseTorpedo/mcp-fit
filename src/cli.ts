@@ -29,12 +29,15 @@
  * Owns: src/cli.ts
  */
 
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 import { connectClient } from './connect/client.js';
-import { createTransport } from './connect/transports.js';
+import { createTransport, createDisposableWorkspace } from './connect/transports.js';
+import type { DisposableWorkspace } from './connect/transports.js';
+import { checkContainment } from './eval/containment-check.js';
+import { Transcript, plantCanary } from './eval/transcript.js';
 import { introspect } from './connect/introspect.js';
 import { lint } from './lint/engine.js';
 import { scoreLintOnly } from './score/scorer.js';
@@ -97,6 +100,13 @@ OPTIONS
                 (crypto-pinned tier — the trust anchor, ADR-F4).
   --verify-jku  card only: also fetch the header jku JWKS (crypto-jku tier;
                 network opt-in — proves integrity + key possession, NOT provenance).
+  --live        scan/fix only: run the LLM-driven eval harness, letting a model
+                make tool CALLS against the target.
+                THIS IS NOT AN EXECUTION GATE. A plain scan already spawns the
+                server and runs its MCP initialize handshake, so a malicious
+                server's payload can fire without this flag. --live bounds the
+                ADDITIONAL blast radius of model-driven tool use, and is refused
+                outright when the containment self-test finds no isolation.
 
 EXAMPLES
   # Score a local stdio server
@@ -120,7 +130,7 @@ EXAMPLES
 
 ARTIFACTS
   compat.json        Full MCP scorecard (validates against schemas/compat.schema.json)
-  evals.jsonl        Task traces from dynamic eval (empty when eval is skipped)
+  evals.jsonl        Task traces from the eval harness (empty unless --live)
   card-compat.json   A2A card scorecard (validates against schemas/card-compat.schema.json)
 
 Axes (lower = agent unfriendly):
@@ -233,6 +243,16 @@ interface ParsedArgs {
   cardVerifyKeys: string | null;
   /** card: opt into fetching the header jku JWKS (crypto-jku tier, network). */
   cardVerifyJku: boolean;
+  /**
+   * scan/fix: opt into the LLM-driven eval harness.
+   *
+   * Gates the agent making tool CALLS against the target. It does NOT make the
+   * default execution-free — a plain `scan` already spawns the server process
+   * and runs the MCP initialize handshake, so a malicious server's payload can
+   * fire without this flag. What `--live` bounds is the ADDITIONAL blast radius
+   * of letting a model drive that server's tools.
+   */
+  live: boolean;
 }
 
 function parseCliArgs(argv: string[]): ParsedArgs {
@@ -245,11 +265,12 @@ function parseCliArgs(argv: string[]): ParsedArgs {
   let cardUrl: string | null = null;
   let cardVerifyKeys: string | null = null;
   let cardVerifyJku = false;
+  let live = false;
 
   if (args.length === 0) {
     return {
       subcommand: 'help', outDir, sse, serverArgv, cardPath, cardUrl,
-      cardVerifyKeys, cardVerifyJku,
+      cardVerifyKeys, cardVerifyJku, live,
     };
   }
 
@@ -307,7 +328,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
     }
     return {
       subcommand, outDir, sse, serverArgv, cardPath, cardUrl,
-      cardVerifyKeys, cardVerifyJku,
+      cardVerifyKeys, cardVerifyJku, live,
     };
   }
 
@@ -337,6 +358,8 @@ function parseCliArgs(argv: string[]): ParsedArgs {
       sse = v;
     } else if (a.startsWith('--sse=')) {
       sse = a.slice('--sse='.length);
+    } else if (a === '--live') {
+      live = true;
     } else {
       process.stderr.write(`mcp-fit: unknown option '${a}'. Run 'mcp-fit help'.\n`);
       process.exit(1);
@@ -348,7 +371,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
 
   return {
     subcommand, outDir, sse, serverArgv, cardPath, cardUrl,
-    cardVerifyKeys, cardVerifyJku,
+    cardVerifyKeys, cardVerifyJku, live,
   };
 }
 
@@ -359,6 +382,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
 function resolveTransport(
   sse: string | null,
   serverArgv: string[],
+  workspace?: DisposableWorkspace,
 ): ReturnType<typeof createTransport> & { kind: 'stdio' | 'sse' } {
   if (sse) {
     const t = createTransport({ kind: 'sse', url: sse });
@@ -375,7 +399,22 @@ function resolveTransport(
   }
 
   const [command, ...args] = serverArgv;
-  const t = createTransport({ kind: 'stdio', command: command!, args });
+  // A spawned server gets a disposable HOME when one is supplied, so
+  // HOME-relative reads land in an empty temp dir rather than the operator's
+  // ~/.aws, ~/.ssh or ~/.npmrc. Absolute paths still resolve — see the note on
+  // createDisposableWorkspace; this raises the floor, it does not isolate.
+  //
+  // The cwd is deliberately left alone: the operator names the server with
+  // paths relative to their own directory, including in ARGUMENTS, which
+  // cannot be rewritten safely. That note lives on createDisposableWorkspace.
+  const t = createTransport({
+    kind: 'stdio',
+    command: command!,
+    args,
+    ...(workspace !== undefined
+      ? { env: { ...process.env, HOME: workspace.home } as Record<string, string> }
+      : {}),
+  });
   return Object.assign(t, { kind: 'stdio' as const });
 }
 
@@ -386,7 +425,48 @@ function resolveTransport(
 async function cmdScan(opts: ParsedArgs): Promise<void> {
   const { outDir, sse, serverArgv } = opts;
 
-  const transport = resolveTransport(sse, serverArgv);
+  // A spawned server gets a disposable HOME and cwd. Remote (SSE) servers are
+  // not ours to contain — there is no process here to give a workspace to.
+  const workspace = sse ? undefined : createDisposableWorkspace();
+
+  // Measure containment BEFORE trusting the target with anything, in the same
+  // spawn context the target will get. The result is reported as the run's
+  // isolation posture rather than assumed — a bare box says "weak" out loud
+  // instead of inheriting a promise written on some other machine.
+  // Plant a credential honeypot in the disposable HOME before the server ever
+  // runs. Nothing legitimate reads it, so the value coming back through the
+  // MCP channel is proof the server went looking for credentials.
+  const canary = workspace ? plantCanary(workspace.home) : undefined;
+  const transcript = new Transcript(canary);
+
+  const containment = workspace
+    ? await checkContainment({ home: workspace.home, cwd: workspace.cwd })
+    : undefined;
+  transcript.record(
+    'note',
+    containment ? `containment: ${containment.detail}` : 'containment: not probed (remote server)',
+  );
+
+  if (containment !== undefined && !containment.contained) {
+    process.stderr.write(
+      `mcp-fit: containment self-test — NOT contained (${containment.detail})\n`,
+    );
+  }
+
+  if (opts.live && containment !== undefined && !containment.contained) {
+    // Refuse loudly. --live hands a model the target's tools; doing that with
+    // measured-absent containment is the combination the whole isolation stack
+    // exists to prevent.
+    workspace?.dispose();
+    throw new Error(
+      'refusing --live: the containment self-test found no isolation in the spawn ' +
+        `context (${containment.detail}). The eval agent would drive an untrusted ` +
+        'server with full host filesystem and network reach as this user. Run without ' +
+        '--live to score statically, or provide an OS-level sandbox.',
+    );
+  }
+
+  const transport = resolveTransport(sse, serverArgv, workspace);
   const transportKind = transport.kind;
 
   process.stderr.write(`mcp-fit: connecting to server (${transportKind})...\n`);
@@ -401,6 +481,19 @@ async function cmdScan(opts: ParsedArgs): Promise<void> {
       `mcp-fit: found ${server.tools.length} tool(s), ${server.resources.length} resource(s), ${server.prompts.length} prompt(s)\n`,
     );
 
+    // Scan what the server told us for the canary. This covers the stdio
+    // channel only — a server that reads the honeypot and POSTs it itself is
+    // invisible here, and a silent canary means "not caught on this channel",
+    // never "no exfiltration occurred".
+    transcript.record('from-server', JSON.stringify(server));
+    if (!transcript.clean) {
+      process.stderr.write(
+        `mcp-fit: CANARY TRIPPED — the server returned the contents of a honeypot ` +
+          `credentials file planted in its HOME. It read credentials it had no reason ` +
+          `to touch. Treat this server as hostile.\n`,
+      );
+    }
+
     process.stderr.write(`mcp-fit: linting...\n`);
     const lintResult = lint(server.tools);
 
@@ -412,16 +505,31 @@ async function cmdScan(opts: ParsedArgs): Promise<void> {
 
     const compatPath = join(absOut, 'compat.json');
     const evalsPath = join(absOut, 'evals.jsonl');
+    const transcriptPath = join(absOut, 'transcript.jsonl');
 
-    await emitCompat(scorecard, compatPath);
+    // The posture written into compat.json is derived from what was actually
+    // done and actually measured — never from what was intended.
+    await emitCompat(scorecard, compatPath, {
+      disposableHome: workspace !== undefined,
+      ...(containment !== undefined ? { selfTestVerified: containment.contained } : {}),
+    });
     await emitEvals([], evalsPath); // no eval traces in scan-only mode
+    await writeFile(transcriptPath, transcript.toJsonl(), 'utf8');
 
     // Print human-readable scorecard
     process.stdout.write(renderScorecard(scorecard) + '\n');
     process.stderr.write(`\nmcp-fit: artifacts written to ${absOut}/\n`);
-    process.stderr.write(`  compat.json   (scorecard)\n`);
-    process.stderr.write(`  evals.jsonl   (task traces — empty; run with --eval to populate)\n`);
+    process.stderr.write(`  compat.json   (scorecard, incl. isolationPosture)\n`);
+    process.stderr.write(
+      `  transcript.jsonl (what the scan observed; canary ${transcript.clean ? 'silent' : 'TRIPPED'})\n`,
+    );
+    process.stderr.write(
+      `  evals.jsonl   (task traces — empty; --live runs the LLM-driven eval harness.\n` +
+        `                 NOTE: --live gates the agent's tool CALLS, not execution —\n` +
+        `                 this scan already spawned the server and ran its handshake)\n`,
+    );
   } finally {
+    workspace?.dispose();
     await client.close().catch(() => {
       // Ignore close errors — server process may have already exited.
     });
@@ -620,6 +728,7 @@ async function cmdFix(opts: ParsedArgs): Promise<void> {
 
     const compatPath = join(absOut, 'compat.json');
     const evalsPath = join(absOut, 'evals.jsonl');
+    const transcriptPath = join(absOut, 'transcript.jsonl');
 
     await emitCompat(afterScorecard, compatPath);
     await emitEvals([], evalsPath);
