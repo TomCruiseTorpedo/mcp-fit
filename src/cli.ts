@@ -49,6 +49,7 @@ import { CARD_AXIS_NAMES } from './a2a/card-types.js';
 import { scoreCardLintOnly } from './a2a/card-scorer.js';
 import { emitCardCompat } from './a2a/emit.js';
 import { keyStoreFromJwks, verifyCardSignature } from './a2a/verify.js';
+import { guardedFetch } from './net/guard.js';
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json so the banner never drifts from the
@@ -89,6 +90,8 @@ OPTIONS
   --sse <url>   Use SSE transport to the given URL instead of spawning a process.
   --url <url>   card only: fetch a live Agent Card over HTTPS (explicit network
                 opt-in). A bare origin gets /.well-known/agent-card.json appended.
+                Loopback, private and link-local destinations are refused, on
+                the first hop and on every redirect.
   --verify-keys <jwks.json>
                 card only: verify signatures against a local trusted JWKS
                 (crypto-pinned tier — the trust anchor, ADR-F4).
@@ -498,7 +501,10 @@ async function cmdCard(opts: ParsedArgs): Promise<void> {
   } else {
     const target = resolveCardUrl(cardUrl!);
     process.stderr.write(`mcp-fit: fetching ${target} ...\n`);
-    const response = await fetch(target, {
+    // Guarded: refuses loopback / RFC1918 / link-local (the cloud metadata
+    // endpoint) destinations before any request is made, and re-checks every
+    // redirect hop. See src/net/guard.ts.
+    const response = await guardedFetch(target, {
       headers: { accept: 'application/json' },
     });
     if (!response.ok) {

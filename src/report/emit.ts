@@ -13,7 +13,7 @@ import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Ajv } from 'ajv';
-import type { Scorecard, TaskTrace } from '../types.js';
+import type { IsolationPosture, Scorecard, TaskTrace } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Schema loading & validator setup
@@ -88,24 +88,121 @@ export function validateTaskTraceSchema(data: unknown): ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
+// Isolation posture
+// ---------------------------------------------------------------------------
+
+/**
+ * Facts observed about how a scan was actually run. Each field is something a
+ * caller can only set by having genuinely done the thing.
+ *
+ * Deliberately evidence-shaped rather than a posture the caller asserts: the
+ * point of the field is to report what happened, and a caller who can simply
+ * declare 'namespace' has been handed the same false-claim problem this
+ * replaces. Fields are added as the isolation stack grows.
+ */
+export interface IsolationEvidence {
+  /** The spawned server got a fresh, disposable HOME and cwd. */
+  disposableHome?: boolean;
+  /** An OS-level sandbox wrapped the spawn — the mechanism name, e.g. 'sandbox-exec'. */
+  osSandbox?: string | null;
+  /**
+   * An in-sandbox self-test ran in the real spawn context and CONFIRMED
+   * containment (attempted a host-file read and an external resolve, both
+   * refused). False means the test ran and containment was absent — which
+   * downgrades the reported level rather than being ignored.
+   */
+  selfTestVerified?: boolean;
+}
+
+/**
+ * Determine the isolation posture from observed evidence.
+ *
+ * Returns 'none' when handed nothing, because that is the truth today: the
+ * eval sandbox is an in-process tool-NAME denylist sharing the host's PID,
+ * filesystem, network and user. This function is the seam the isolation stack
+ * writes into — as real containment lands, the evidence it passes changes the
+ * answer, and no constant anywhere needs editing to keep the artifact honest.
+ */
+export function detectIsolationPosture(evidence: IsolationEvidence = {}): IsolationPosture {
+  const { disposableHome = false, osSandbox = null, selfTestVerified } = evidence;
+
+  // A self-test that RAN and failed is the strongest signal available: it
+  // measured the real spawn context and found no containment. It overrides
+  // every other claim, because the other fields describe what was attempted
+  // and this one describes what was achieved.
+  if (selfTestVerified === false) {
+    return {
+      level: 'none',
+      mechanism:
+        'containment self-test FAILED in the real spawn context — a sentinel host-file ' +
+        'read or external resolve succeeded',
+      residual:
+        'everything: the target server can reach the host filesystem and network as this user',
+    };
+  }
+
+  if (typeof osSandbox === 'string' && osSandbox.length > 0) {
+    return {
+      level: 'namespace',
+      mechanism: `OS-level sandbox (${osSandbox})`,
+      residual:
+        'whatever the sandbox profile permits; coverage is platform-specific and its ' +
+        'failure mode is silent — read the profile, do not assume it',
+    };
+  }
+
+  if (disposableHome) {
+    return {
+      level: 'process',
+      mechanism: 'separate process with a disposable HOME and cwd',
+      residual:
+        'ABSOLUTE paths still resolve — a disposable HOME cuts HOME-relative reads only. ' +
+        'The process runs as this user with full network access',
+    };
+  }
+
+  return {
+    level: 'none',
+    mechanism:
+      'in-process tool-name denylist only (src/eval/sandbox.ts) — same PID, filesystem, ' +
+      'network and user as the CLI',
+    residual:
+      'a hostile tool under an unrecognised name (e.g. "saveNote", "fetch_url") is not ' +
+      'filtered, and nothing constrains the spawned server process itself',
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Emitters
 // ---------------------------------------------------------------------------
 
 /**
  * Validate and write a Scorecard to `outputPath` as `compat.json`.
  *
+ * Stamps the isolation posture from `evidence`, overwriting anything already on
+ * the scorecard: the artifact must report what the emitter can substantiate,
+ * not what a caller would like it to say.
+ *
  * @throws if the scorecard does not validate against compat.schema.json.
  * @throws if the write fails.
  */
-export async function emitCompat(scorecard: Scorecard, outputPath: string): Promise<void> {
-  const result = validateScorecardSchema(scorecard);
+export async function emitCompat(
+  scorecard: Scorecard,
+  outputPath: string,
+  evidence: IsolationEvidence = {},
+): Promise<void> {
+  const stamped: Scorecard = {
+    ...scorecard,
+    isolationPosture: detectIsolationPosture(evidence),
+  };
+  const result = validateScorecardSchema(stamped);
   if (!result.valid) {
     throw new Error(
       `Scorecard does not validate against compat.schema.json:\n` +
         result.errors.map((e) => `  • ${e}`).join('\n'),
     );
   }
-  await writeFile(outputPath, JSON.stringify(scorecard, null, 2) + '\n', 'utf8');
+  await writeFile(outputPath, JSON.stringify(stamped, null, 2) + '\n', 'utf8');
 }
 
 /**

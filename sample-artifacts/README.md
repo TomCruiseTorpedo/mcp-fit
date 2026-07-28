@@ -14,6 +14,12 @@ These serve as:
 | `compat.json` | Full scorecard for `strawman v0.1.0` (lint-only; no eval) |
 | `evals.jsonl` | Task traces — empty in lint-only mode (no dynamic eval run) |
 
+Note the `isolationPosture` block in `compat.json`: it records the isolation
+that actually applied to that run, not what the tool aspires to. It reads
+`none` today — the eval sandbox is an in-process tool-name denylist sharing the
+host's PID, filesystem, network and user. Read that field rather than inferring
+containment from prose.
+
 ## Reproducing
 
 From the repo root:

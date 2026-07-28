@@ -23,3 +23,9 @@ jobs:
         run: bun run test
       - name: Score-engine drift guard
         run: bun run check:score-sync
+      # Asserts this repo's manifest is byte-identical to gatewarden's. The
+      # step above only proves this repo is internally consistent — both repos
+      # can pass it while the vendored engines diverge. Expect a transient red
+      # between the two halves of a two-repo change; land them back-to-back.
+      - name: Score-engine cross-repo assertion
+        run: bun run check:score-cross

@@ -12,6 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, it, expect } from 'vitest';
 import type { Scorecard, TaskTrace } from '../types.js';
 import {
+  detectIsolationPosture,
   emitCompat,
   emitEvals,
   validateScorecardSchema,
@@ -79,6 +80,23 @@ describe('validateScorecardSchema', () => {
     delete sc['schemaVersion'];
     const result = validateScorecardSchema(sc);
     expect(result.valid).toBe(false);
+  });
+
+  it('rejects a scorecard with no isolationPosture', () => {
+    // The field is REQUIRED in the schema on purpose: it makes "every artifact
+    // states its isolation" an enforced property of the file rather than a
+    // convention the emitter is trusted to follow.
+    const sc = makeSampleScorecard();
+    delete sc.isolationPosture;
+    const result = validateScorecardSchema(sc);
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toMatch(/isolationPosture/);
+  });
+
+  it('rejects an unknown isolation level', () => {
+    const sc = makeSampleScorecard();
+    (sc.isolationPosture as unknown as Record<string, unknown>)['level'] = 'airgapped';
+    expect(validateScorecardSchema(sc).valid).toBe(false);
   });
 
   it('rejects non-object input', () => {
@@ -180,6 +198,82 @@ describe('emitCompat', () => {
     const path = tmpPath('compat-bad', 'json');
     await expect(emitCompat(sc, path)).rejects.toThrow(/compat\.schema\.json/);
   });
+
+  it('stamps the isolation posture even when the caller supplies none', async () => {
+    const sc = makeSampleScorecard();
+    delete sc.isolationPosture;
+    const path = tmpPath('compat-posture', 'json');
+    await emitCompat(sc, path);
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as Scorecard;
+    expect(parsed.isolationPosture?.level).toBe('none');
+    expect(parsed.isolationPosture?.residual).toBeTruthy();
+  });
+
+  it('OVERWRITES a posture the caller tried to assert', async () => {
+    // The artifact reports what the emitter can substantiate. A caller that
+    // could simply declare 'vm' would reintroduce the false-claim problem the
+    // field exists to remove.
+    const sc = makeSampleScorecard();
+    sc.isolationPosture = { level: 'vm', mechanism: 'wishful thinking' };
+    const path = tmpPath('compat-posture-lie', 'json');
+    await emitCompat(sc, path);
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as Scorecard;
+    expect(parsed.isolationPosture?.level).toBe('none');
+  });
+
+  it('reports a stronger posture when the evidence supports it', async () => {
+    const path = tmpPath('compat-posture-proc', 'json');
+    await emitCompat(makeSampleScorecard(), path, { disposableHome: true });
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as Scorecard;
+    expect(parsed.isolationPosture?.level).toBe('process');
+    expect(parsed.isolationPosture?.residual).toMatch(/ABSOLUTE paths/);
+  });
+
+  it('a FAILED containment self-test overrides every other claim', async () => {
+    const path = tmpPath('compat-posture-selftest', 'json');
+    await emitCompat(makeSampleScorecard(), path, {
+      disposableHome: true,
+      osSandbox: 'sandbox-exec',
+      selfTestVerified: false,
+    });
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as Scorecard;
+    expect(parsed.isolationPosture?.level).toBe('none');
+    expect(parsed.isolationPosture?.mechanism).toMatch(/self-test FAILED/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectIsolationPosture
+// ---------------------------------------------------------------------------
+
+describe('detectIsolationPosture', () => {
+  it('is honest about today: no evidence means no isolation', () => {
+    const posture = detectIsolationPosture();
+    expect(posture.level).toBe('none');
+    expect(posture.mechanism).toMatch(/in-process tool-name denylist/);
+  });
+
+  it('names a residual at every level below vm', () => {
+    for (const evidence of [
+      {},
+      { disposableHome: true },
+      { osSandbox: 'sandbox-exec' },
+      { selfTestVerified: false },
+    ]) {
+      const posture = detectIsolationPosture(evidence);
+      expect(posture.level).not.toBe('vm');
+      // A weak level with no stated residual is how a posture field decays
+      // back into the absolute claim it replaced.
+      expect(posture.residual).toBeTruthy();
+    }
+  });
+
+  it('ranks an OS sandbox above a disposable HOME', () => {
+    expect(detectIsolationPosture({ disposableHome: true }).level).toBe('process');
+    expect(
+      detectIsolationPosture({ disposableHome: true, osSandbox: 'unshare' }).level,
+    ).toBe('namespace');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -237,6 +331,13 @@ function makeSampleScorecard(): Scorecard {
   return {
     schemaVersion: '1.0.0',
     server: { name: 'test-server', version: '1.0.0', transport: 'stdio' },
+    // Required by the schema. `emitCompat` stamps this itself; the fixture
+    // carries one so the standalone validator tests model a real artifact.
+    isolationPosture: {
+      level: 'none',
+      mechanism: 'in-process tool-name denylist only',
+      residual: 'a hostile tool under an unrecognised name is not filtered',
+    },
     axes: {
       namespacing: {
         score: 8,

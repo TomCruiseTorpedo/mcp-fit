@@ -18,6 +18,15 @@
  * trust anchor is the caller's key store. That is why 'crypto-pinned'
  * outranks 'crypto-jku' and why jku fetching is never on by default.
  *
+ * SSRF (the same fact, read as an attack): because `jku` is attacker-chosen,
+ * enabling the fetch hands an untrusted document the ability to name a
+ * destination for an outbound request from the scanning host. Every jku fetch
+ * therefore goes through the destination guard (`src/net/guard.ts`), which
+ * refuses loopback / private / link-local addresses — including the cloud
+ * metadata endpoint — on the first hop and on every redirect. A refusal is
+ * reported as its own finding ('jku-destination-blocked'), never folded into
+ * the generic fetch-failure case.
+ *
  * Determinism caveat (spec-depth C4): default-stripping is schema-version-
  * conditional. The REQUIRED classification below is the A2A v1.0.1 table;
  * unknown default-valued fields are stripped (they cannot be REQUIRED) and
@@ -34,6 +43,12 @@ import type {
   SignatureTier,
 } from './card-types.js';
 import { analyseSignatures } from './signature.js';
+import {
+  BlockedDestinationError,
+  assertDestinationAllowed,
+  guardedFetch,
+  type GuardOptions,
+} from '../net/guard.js';
 
 // ---------------------------------------------------------------------------
 // Key store
@@ -211,6 +226,30 @@ export interface VerifyCardOptions {
   fetchJku?: boolean;
   /** Injectable fetch for tests. */
   fetchImpl?: JwksFetchLike;
+  /**
+   * Destination-guard options for the `jku` fetch (SSRF — `src/net/guard.ts`).
+   *
+   * `allowPrivate` is ignored here: it is a general-purpose knob a caller may
+   * have set for unrelated reasons, and the `jku` URL is read out of the
+   * untrusted card, so there is no caller intent attached to it. Use
+   * `dangerouslyAllowPrivateJku` to make that decision explicitly. Tests inject
+   * `lookupImpl` through this bag.
+   */
+  guard?: GuardOptions;
+  /**
+   * Permit the `jku` fetch to reach loopback / private / link-local addresses.
+   *
+   * OFF BY DEFAULT, and named to be hard to enable by accident. The `jku` is
+   * chosen by the card under inspection, so turning this on lets an untrusted
+   * document aim an outbound request at the scanning host's own network — the
+   * SSRF this guard exists to stop.
+   *
+   * The one legitimate use is verifying against a server the CALLER started on
+   * this machine (end-to-end tests, local development). That is a decision
+   * about provenance, not about the address: caller intent may be honoured,
+   * card intent never is. If the URL did not come from you, leave this off.
+   */
+  dangerouslyAllowPrivateJku?: boolean;
 }
 
 function decodeProtected(protectedB64: string): Record<string, unknown> | null {
@@ -290,21 +329,56 @@ export async function verifyCardSignature(
       jwk = options.keyStore.keys[kid];
       tierIfVerified = 'crypto-pinned';
     } else if (options.fetchJku === true && typeof jku === 'string') {
+      // The `jku` destination is chosen by the card being scored — i.e. by the
+      // party we are checking up on. It is the single most attacker-controlled
+      // URL in the product, so it is guarded before any request is made.
+      // `guard.allowPrivate` is deliberately NOT consulted: only the explicit,
+      // awkwardly-named opt-in below can open this path.
+      const guardOptions: GuardOptions = {
+        ...options.guard,
+        allowPrivate: options.dangerouslyAllowPrivateJku === true,
+      };
       try {
-        const fetchImpl = options.fetchImpl ?? (fetch as unknown as JwksFetchLike);
-        const response = await fetchImpl(jku);
-        if (!response.ok) throw new Error('jwks fetch failed');
-        const store = keyStoreFromJwks(await response.json());
+        let payload: unknown;
+        if (options.fetchImpl !== undefined) {
+          // Caller-supplied transport: guard the destination, then hand off.
+          await assertDestinationAllowed(jku, guardOptions);
+          const response = await options.fetchImpl(jku);
+          if (!response.ok) throw new Error('jwks fetch failed');
+          payload = await response.json();
+        } else {
+          // Default transport also re-guards every redirect hop.
+          const response = await guardedFetch(jku, {}, guardOptions);
+          if (!response.ok) throw new Error('jwks fetch failed');
+          payload = await response.json();
+        }
+        const store = keyStoreFromJwks(payload);
         jwk = typeof kid === 'string' ? store.keys[kid] : undefined;
         tierIfVerified = 'crypto-jku';
-      } catch {
-        findings.push({
-          ruleId: 'jku-fetch-failed',
-          axis: 'signature-hygiene',
-          severity: 'warning',
-          field: `signatures[${index}].protected`,
-          message: `Signature ${index} jku JWKS could not be fetched (${String(jku)}).`,
-        });
+      } catch (error) {
+        // A REFUSED destination and a FAILED fetch are different events: one is
+        // the card pointing somewhere it must not, the other is the network.
+        // Collapsing them would make the guard invisible in the report.
+        if (error instanceof BlockedDestinationError) {
+          findings.push({
+            ruleId: 'jku-destination-blocked',
+            axis: 'signature-hygiene',
+            severity: 'error',
+            field: `signatures[${index}].protected`,
+            message:
+              `Signature ${index} jku points at a destination mcp-fit refuses to fetch ` +
+              `(${error.message}). A card whose jku names an internal or loopback address ` +
+              `is attempting to use the verifier as an SSRF proxy.`,
+          });
+        } else {
+          findings.push({
+            ruleId: 'jku-fetch-failed',
+            axis: 'signature-hygiene',
+            severity: 'warning',
+            field: `signatures[${index}].protected`,
+            message: `Signature ${index} jku JWKS could not be fetched (${String(jku)}).`,
+          });
+        }
         continue;
       }
     }

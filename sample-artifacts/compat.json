@@ -370,5 +370,10 @@
         }
       ]
     }
-  ]
+  ],
+  "isolationPosture": {
+    "level": "none",
+    "mechanism": "in-process tool-name denylist only (src/eval/sandbox.ts) — same PID, filesystem, network and user as the CLI",
+    "residual": "a hostile tool under an unrecognised name (e.g. \"saveNote\", \"fetch_url\") is not filtered, and nothing constrains the spawned server process itself"
+  }
 }

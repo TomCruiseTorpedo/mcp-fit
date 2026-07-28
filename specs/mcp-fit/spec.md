@@ -108,11 +108,21 @@ The system MUST run a synthetic task corpus through a real agent harness against
   - GIVEN an eval run
   - WHEN the agent supplies a tool argument not traceable to a prior tool return or a task literal
   - THEN the trace records a `provenance:fabricated` event (evidence feeding the v1.1 data-provenance axis)
-- Scenario: eval sandbox (security)
+- Scenario: eval sandbox (security) — posture-scoped, not absolute
   - GIVEN an untrusted target server
   - WHEN eval runs
   - THEN the eval agent is granted only the target server's tools plus a sandboxed scratch space
-  - AND never the host's real capabilities (filesystem, shell, network beyond the target)
+  - AND tool names matching known host-capability patterns are denied
+  - AND the run reports the isolation that ACTUALLY applied, in `compat.json`'s `isolationPosture`
+  - AND that posture is `none` while the filter remains in-process: it shares the host's PID, filesystem, network and user, so a hostile tool under an unrecognised name is not contained, and the spawned server process is not constrained at all
+  - NOTE this scenario previously asserted the agent gets "never the host's real capabilities". The code has never delivered that, and the promise is not restored by wording — it becomes true only when an OS-level sandbox lands, at which point the posture value rises to match.
+- Scenario: outbound destination guard (security)
+  - GIVEN a URL chosen by untrusted input (a `--url` target, or a `jku` read from inside the card being scored)
+  - WHEN mcp-fit fetches it
+  - THEN loopback, private, link-local and non-http(s) destinations are refused before any request is made
+  - AND the check classifies RESOLVED addresses, not hostname strings
+  - AND every redirect hop is re-checked
+  - AND a refusal is reported distinctly from a network failure
 
 ### Requirement: Machine-Readable Output
 

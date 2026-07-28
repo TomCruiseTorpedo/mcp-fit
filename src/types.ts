@@ -179,6 +179,37 @@ export interface ToolReport {
 }
 
 // ---------------------------------------------------------------------------
+// Isolation posture — what actually contained the scan
+// ---------------------------------------------------------------------------
+
+/**
+ * How strongly the scanned server was isolated from the host.
+ *
+ *   'none'      — same process, filesystem, network and user as the CLI. Any
+ *                 containment is advisory (an in-process tool-name denylist).
+ *   'process'   — a separate process with a restricted environment (e.g. a
+ *                 disposable HOME and cwd). Absolute paths still resolve.
+ *   'namespace' — OS-level isolation (`sandbox-exec`, `unshare`, container).
+ *   'vm'        — a separate kernel.
+ *
+ * Recorded on every emitted scorecard so a consumer never has to infer it from
+ * documentation. The ordering is meaningful: each level is strictly stronger.
+ */
+export type IsolationLevel = 'none' | 'process' | 'namespace' | 'vm';
+
+/**
+ * The isolation that actually applied to a scan — a measured property of the
+ * run, not a promise made in a README.
+ */
+export interface IsolationPosture {
+  level: IsolationLevel;
+  /** What produced this level, in plain words. */
+  mechanism: string;
+  /** What this level does NOT contain. Omitted only at 'vm'. */
+  residual?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Scorecard — root shape for compat.json
 // ---------------------------------------------------------------------------
 
@@ -192,6 +223,13 @@ export interface Scorecard {
   axes: Record<AxisName, AxisScore>;
   aggregate: AggregateScore;
   tools: ToolReport[];
+  /**
+   * Stamped by `emitCompat` from observed evidence — callers do not supply it,
+   * which is why it is optional here and REQUIRED in the schema. The emitter is
+   * the only path to a compat.json on disk, so stamping there makes the field's
+   * presence a property of construction rather than a rule people must follow.
+   */
+  isolationPosture?: IsolationPosture;
 }
 
 // ---------------------------------------------------------------------------

@@ -189,6 +189,13 @@ describe('verifyCardSignature — crypto-pinned tier', () => {
 });
 
 describe('verifyCardSignature — crypto-jku tier (explicit opt-in)', () => {
+  /**
+   * The jku fetch runs through the SSRF destination guard, which resolves the
+   * hostname. Tests inject the resolver so they never touch real DNS —
+   * `publicResolver` stands in for "this name is an ordinary public host".
+   */
+  const publicResolver = async () => [{ address: '93.184.216.34', family: 4 }];
+
   it('verifies via a fetched JWKS and grants crypto-jku, not crypto-pinned', async () => {
     const { privateKey, publicJwk } = await makeKeys('ES256');
     const signed = await signCard(BASE_CARD, privateKey, 'ES256', {
@@ -196,9 +203,95 @@ describe('verifyCardSignature — crypto-jku tier (explicit opt-in)', () => {
     });
     const report = await verifyCardSignature(signed, {
       fetchJku: true,
+      guard: { lookupImpl: publicResolver },
       fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [publicJwk] }) }),
     });
     expect(report.tier).toBe('crypto-jku');
+  });
+
+  it('REFUSES a jku pointing at the cloud metadata endpoint, and says so distinctly', async () => {
+    const { privateKey } = await makeKeys('ES256');
+    const signed = await signCard(BASE_CARD, privateKey, 'ES256', {
+      jku: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+    });
+    let fetched = 0;
+    const report = await verifyCardSignature(signed, {
+      fetchJku: true,
+      fetchImpl: async () => {
+        fetched += 1;
+        return { ok: true, json: async () => ({ keys: [] }) };
+      },
+    });
+    // No request was made at all — the guard runs before the transport.
+    expect(fetched).toBe(0);
+    expect(report.tier).toBe('structural');
+    expect(report.findings.some((f) => f.ruleId === 'jku-destination-blocked')).toBe(true);
+    // Distinct from an ordinary network failure — that distinction is the
+    // whole reason the guard is visible in the report.
+    expect(report.findings.some((f) => f.ruleId === 'jku-fetch-failed')).toBe(false);
+  });
+
+  it('REFUSES a jku whose innocuous hostname resolves to a private address', async () => {
+    const { privateKey } = await makeKeys('ES256');
+    const signed = await signCard(BASE_CARD, privateKey, 'ES256', {
+      jku: 'https://keys.example.com/jwks.json',
+    });
+    let fetched = 0;
+    const report = await verifyCardSignature(signed, {
+      fetchJku: true,
+      guard: { lookupImpl: async () => [{ address: '10.0.0.5', family: 4 }] },
+      fetchImpl: async () => {
+        fetched += 1;
+        return { ok: true, json: async () => ({ keys: [] }) };
+      },
+    });
+    expect(fetched).toBe(0);
+    expect(report.findings.some((f) => f.ruleId === 'jku-destination-blocked')).toBe(true);
+  });
+
+  it('ignores the generic guard.allowPrivate knob on the jku path', async () => {
+    // A caller may have set `allowPrivate` for unrelated reasons; it must not
+    // silently open the one path whose destination comes from untrusted input.
+    const { privateKey } = await makeKeys('ES256');
+    const signed = await signCard(BASE_CARD, privateKey, 'ES256', {
+      jku: 'http://127.0.0.1:8080/jwks.json',
+    });
+    const report = await verifyCardSignature(signed, {
+      fetchJku: true,
+      guard: { allowPrivate: true },
+      fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [] }) }),
+    });
+    expect(report.findings.some((f) => f.ruleId === 'jku-destination-blocked')).toBe(true);
+  });
+
+  it('permits a loopback jku ONLY under the explicit dangerous opt-in', async () => {
+    // Caller intent ("I started this server myself") may be honoured; card
+    // intent never is. The opt-in is what distinguishes the two.
+    const { privateKey, publicJwk } = await makeKeys('ES256');
+    const signed = await signCard(BASE_CARD, privateKey, 'ES256', {
+      jku: 'http://127.0.0.1:8080/jwks.json',
+    });
+    const report = await verifyCardSignature(signed, {
+      fetchJku: true,
+      dangerouslyAllowPrivateJku: true,
+      fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [publicJwk] }) }),
+    });
+    expect(report.tier).toBe('crypto-jku');
+    expect(report.findings.some((f) => f.ruleId === 'jku-destination-blocked')).toBe(false);
+  });
+
+  it('still reports an ordinary fetch failure as a fetch failure', async () => {
+    const { privateKey } = await makeKeys('ES256');
+    const signed = await signCard(BASE_CARD, privateKey, 'ES256', {
+      jku: 'https://signed.example.com/jwks.json',
+    });
+    const report = await verifyCardSignature(signed, {
+      fetchJku: true,
+      guard: { lookupImpl: publicResolver },
+      fetchImpl: async () => ({ ok: false, json: async () => ({}) }),
+    });
+    expect(report.findings.some((f) => f.ruleId === 'jku-fetch-failed')).toBe(true);
+    expect(report.findings.some((f) => f.ruleId === 'jku-destination-blocked')).toBe(false);
   });
 
   it('never fetches jku without the explicit opt-in', async () => {
@@ -225,6 +318,7 @@ describe('verifyCardSignature — crypto-jku tier (explicit opt-in)', () => {
     const report = await verifyCardSignature(signed, {
       keyStore: store,
       fetchJku: true,
+      guard: { lookupImpl: publicResolver },
       fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [publicJwk] }) }),
     });
     expect(report.tier).toBe('crypto-pinned');

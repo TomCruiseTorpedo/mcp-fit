@@ -4,7 +4,7 @@
   "title": "mcp-fit Scorecard",
   "description": "Machine-readable compatibility scorecard emitted by mcp-fit as compat.json. Validates against ADR-A contract.",
   "type": "object",
-  "required": ["schemaVersion", "server", "axes", "aggregate", "tools"],
+  "required": ["schemaVersion", "server", "axes", "aggregate", "tools", "isolationPosture"],
   "additionalProperties": false,
   "properties": {
     "schemaVersion": {
@@ -13,6 +13,9 @@
     },
     "server": {
       "$ref": "#/$defs/ServerMeta"
+    },
+    "isolationPosture": {
+      "$ref": "#/$defs/IsolationPosture"
     },
     "axes": {
       "type": "object",
@@ -60,6 +63,28 @@
     }
   },
   "$defs": {
+    "IsolationPosture": {
+      "type": "object",
+      "description": "How strongly the scanned server was isolated from the host DURING THIS RUN. A measured property of the run, not a claim about the product's intentions — consumers should read this rather than inferring isolation from documentation.",
+      "required": ["level", "mechanism"],
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["none", "process", "namespace", "vm"],
+          "description": "Strictly increasing strength. 'none' = same process, filesystem, network and user as the CLI; containment is an in-process tool-name denylist only. 'process' = separate process with a restricted environment (disposable HOME/cwd); absolute paths still resolve. 'namespace' = OS-level isolation (sandbox-exec, unshare, container). 'vm' = separate kernel."
+        },
+        "mechanism": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What produced this level, in plain words."
+        },
+        "residual": {
+          "type": "string",
+          "description": "What this level does NOT contain. Present at every level below 'vm' — an absent residual on a weak level is how a posture field turns back into the false claim it replaced."
+        }
+      }
+    },
     "ServerMeta": {
       "type": "object",
       "description": "Target MCP server metadata.",

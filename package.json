@@ -1,7 +1,7 @@
 {
   "name": "mcp-fit",
   "version": "0.1.1",
-  "description": "MCP server agent-usability scorer — scores and auto-fixes tool descriptions",
+  "description": "MCP server agent-usability scorer \u2014 scores and auto-fixes tool descriptions",
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -42,6 +42,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:score-sync": "bash scripts/check-sync.sh",
+    "check:score-cross": "bash scripts/check-sync.sh --cross",
     "prepare": "npm run build"
   },
   "dependencies": {

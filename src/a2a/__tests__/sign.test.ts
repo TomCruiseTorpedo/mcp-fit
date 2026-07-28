@@ -84,6 +84,9 @@ describe('signAgentCard → verifyCardSignature round trips', () => {
     });
     const report = await verifyCardSignature(signed, {
       fetchJku: true,
+      // The jku fetch is SSRF-guarded, which resolves the hostname; inject the
+      // resolver so the test never depends on real DNS.
+      guard: { lookupImpl: async () => [{ address: '93.184.216.34', family: 4 }] },
       fetchImpl: async (url) => {
         expect(url).toBe('https://sign.example.com/.well-known/jwks.json');
         return { ok: true, json: async () => keys.jwks };
