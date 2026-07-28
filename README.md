@@ -105,6 +105,20 @@ node dist/cli.js card fixtures/agent-cards/clean-card.json
 node dist/cli.js card --url https://agent.example.com
 ```
 
+**Scoring an agent you are running yourself?** Use the file form — it is the
+primary path, not a fallback. `--url` exists for fetching a *published* card
+over the public internet, and it refuses loopback and private destinations
+outright (see [Outbound destinations](#outbound-destinations)), so aiming it at
+your own machine will decline. Save the card and score it offline:
+
+```bash
+curl -s localhost:3000/.well-known/agent-card.json > card.json
+node dist/cli.js card card.json
+```
+
+One extra command, and it keeps a card-scoring tool structurally unable to be
+pointed at your own network — including by a redirect inside someone else's card.
+
 Seven card axes (`card-completeness`, `skill-namespacing`, `skill-selection-overlap`,
 `signature-hygiene`, `security-declaration-consistency`, `extension-hygiene`,
 `interface-hygiene`) — all deterministic; artifact is `card-compat.json`.
@@ -123,6 +137,34 @@ canonicalization the verifier applies — the two cannot drift. See
 > **npm note:** the published `mcp-fit` package (0.1.1) predates the A2A card
 > lane — `card`, the verify flags, and the signing library are on `main` and
 > will ship in the next release. Until then, use the clone-based commands above.
+
+### Outbound destinations
+
+Two of `mcp-fit`'s requests go to a URL chosen by something other than you:
+`--url` takes an origin you supply but may not have reviewed, and `--verify-jku`
+fetches a JWKS at an address read from *inside the card being scored* — chosen,
+in other words, by the party under inspection.
+
+Both go through a destination guard. It refuses non-`http(s)` schemes and any
+address in loopback, RFC1918, CGNAT, link-local (including the cloud metadata
+endpoint `169.254.169.254`), `::1`, ULA, multicast or reserved space. Three
+details are what make it a guard rather than a gesture:
+
+- It classifies the **resolved address**, not the hostname string — so
+  `2130706433`, `0177.0.0.1`, `::ffff:169.254.169.254`, and a perfectly ordinary
+  name whose DNS record points somewhere private are all caught. IPv4-mapped,
+  NAT64 and 6to4 forms are unwrapped and re-checked.
+- It **re-checks every redirect hop**. Guarding only the first request means a
+  302 walks you to the metadata endpoint anyway.
+- It **fails closed**: unresolvable, unparseable or unrecognised means refuse.
+
+A `jku` pointing somewhere private is reported as its own finding
+(`jku-destination-blocked`), separate from an ordinary fetch failure — a card
+naming an internal address is a signal about the card, not about the network.
+
+There is no flag to disable this. Known residual, stated rather than glossed:
+DNS rebinding, since the address is resolved once for the check and again for
+the connection.
 
 ### After `npm link` or `npm install -g mcp-fit`
 
@@ -148,7 +190,7 @@ mcp-fit help
 |--------|---------|-------------|
 | `--out <dir>` | `.` | Directory for emitted artifacts |
 | `--sse <url>` | — | SSE transport URL (instead of `-- cmd`) |
-| `--url <url>` | — | `card` only: fetch a live Agent Card (explicit network opt-in) |
+| `--url <url>` | — | `card` only: fetch a live Agent Card (explicit network opt-in; loopback and private destinations refused — score a local agent via the file form) |
 | `--verify-keys <jwks.json>` | — | `card` only: verify signatures against a trusted JWKS (`crypto-pinned` tier) |
 | `--verify-jku` | off | `card` only: also fetch the header `jku` JWKS (`crypto-jku` tier; network opt-in) |
 
