@@ -504,6 +504,19 @@ async function cmdCard(opts: ParsedArgs): Promise<void> {
     // Guarded: refuses loopback / RFC1918 / link-local (the cloud metadata
     // endpoint) destinations before any request is made, and re-checks every
     // redirect hop. See src/net/guard.ts.
+    //
+    // NO ESCAPE HATCH HERE, AND THAT IS DELIBERATE (decided 2026-07-28).
+    // Scoring an agent you are running yourself is already a first-class path:
+    // save the card and use the offline form above. So the only thing a
+    // `--allow-private-network` flag would buy is skipping one `curl` — and a
+    // flag that switches off an SSRF guard gets pasted into scripts by people
+    // who hit the error and searched for how to stop it, after which it
+    // applies to every URL that script fetches, third-party ones included.
+    //
+    // If this ever genuinely blocks someone, the pre-decided answer is
+    // LOOPBACK ONLY (127.0.0.0/8 and ::1) — not `allowPrivate`, which would
+    // also open 169.254.169.254, all of RFC1918, and the CGNAT/tailnet range
+    // in order to reach localhost. Do not reach for the broad switch.
     const response = await guardedFetch(target, {
       headers: { accept: 'application/json' },
     });
