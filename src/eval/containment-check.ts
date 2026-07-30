@@ -81,6 +81,19 @@ setTimeout(() => {
 `;
 
 export interface ContainmentCheckOptions {
+  /**
+   * Wraps the probe's argv/env the same way the TARGET SERVER is wrapped.
+   *
+   * Without this the probe measures the CLI's own context rather than the
+   * spawn context the server will get, so a working sandbox would go
+   * undetected and the posture would read `none` forever. Measuring the wrong
+   * process is worse than not measuring: it produces a confident wrong answer.
+   */
+  wrap?: (
+    command: string,
+    args: readonly string[],
+    cwd: string,
+  ) => Promise<{ argv: string[]; env: NodeJS.ProcessEnv } | null>;
   /** HOME handed to the probe — normally the DisposableWorkspace's. */
   home?: string;
   /** cwd for the probe — normally the DisposableWorkspace's. */
@@ -102,12 +115,25 @@ export interface ContainmentCheckOptions {
 export async function checkContainment(
   options: ContainmentCheckOptions = {},
 ): Promise<ContainmentResult> {
-  const { home, cwd, nodePath = process.execPath, timeoutMs = 5000 } = options;
+  const { home, cwd, nodePath = process.execPath, timeoutMs = 5000, wrap } = options;
 
-  const env: Record<string, string> = {
+  let env: Record<string, string> = {
     PATH: process.env['PATH'] ?? '',
     ...(home !== undefined ? { HOME: home } : {}),
   };
+  let spawnCommand = nodePath;
+  let spawnArgs: string[] = ['-e', PROBE_SOURCE];
+
+  // Run the probe through the SAME wrapper the target server gets, so what it
+  // reports is the containment the server will actually experience.
+  if (wrap !== undefined) {
+    const wrapped = await wrap(nodePath, spawnArgs, cwd ?? process.cwd());
+    if (wrapped !== null && wrapped.argv.length > 0) {
+      spawnCommand = wrapped.argv[0] as string;
+      spawnArgs = wrapped.argv.slice(1);
+      env = { ...(wrapped.env as Record<string, string>), ...(home !== undefined ? { HOME: home } : {}) };
+    }
+  }
 
   const raw = await new Promise<string | null>((resolve) => {
     let settled = false;
@@ -119,7 +145,7 @@ export async function checkContainment(
 
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(nodePath, ['-e', PROBE_SOURCE], {
+      child = spawn(spawnCommand, spawnArgs, {
         env,
         ...(cwd !== undefined ? { cwd } : {}),
         stdio: ['ignore', 'pipe', 'ignore'],

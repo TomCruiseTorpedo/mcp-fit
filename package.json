@@ -54,6 +54,9 @@
     "jose": "^6.2.3",
     "zod": "^4.4.3"
   },
+  "optionalDependencies": {
+    "@anthropic-ai/sandbox-runtime": "^0.0.67"
+  },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0",

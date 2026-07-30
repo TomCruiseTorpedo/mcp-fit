@@ -38,6 +38,8 @@ import { createTransport, createDisposableWorkspace } from './connect/transports
 import type { DisposableWorkspace } from './connect/transports.js';
 import { checkContainment } from './eval/containment-check.js';
 import { Transcript, plantCanary } from './eval/transcript.js';
+import { loadSandbox } from './eval/sandbox-runtime.js';
+import type { SandboxHandle } from './eval/sandbox-runtime.js';
 import { introspect } from './connect/introspect.js';
 import { lint } from './lint/engine.js';
 import { scoreLintOnly } from './score/scorer.js';
@@ -100,6 +102,12 @@ OPTIONS
                 (crypto-pinned tier — the trust anchor, ADR-F4).
   --verify-jku  card only: also fetch the header jku JWKS (crypto-jku tier;
                 network opt-in — proves integrity + key possession, NOT provenance).
+  --sandbox     scan/fix only: EXPERIMENTAL. Wrap the scanned server in an OS
+                sandbox via the optional @anthropic-ai/sandbox-runtime dep.
+                Off by default and NOT yet calibrated: the read-deny profile is
+                verified, but real Node toolchains can fail to start under it.
+                Whatever happens, the containment self-test decides the reported
+                posture — enabling this never asserts containment by itself.
   --live        scan/fix only: run the LLM-driven eval harness, letting a model
                 make tool CALLS against the target.
                 THIS IS NOT AN EXECUTION GATE. A plain scan already spawns the
@@ -243,6 +251,8 @@ interface ParsedArgs {
   cardVerifyKeys: string | null;
   /** card: opt into fetching the header jku JWKS (crypto-jku tier, network). */
   cardVerifyJku: boolean;
+  /** scan/fix: opt into the OS sandbox (EXPERIMENTAL — profile not yet calibrated). */
+  sandbox: boolean;
   /**
    * scan/fix: opt into the LLM-driven eval harness.
    *
@@ -266,11 +276,12 @@ function parseCliArgs(argv: string[]): ParsedArgs {
   let cardVerifyKeys: string | null = null;
   let cardVerifyJku = false;
   let live = false;
+  let sandbox = false;
 
   if (args.length === 0) {
     return {
       subcommand: 'help', outDir, sse, serverArgv, cardPath, cardUrl,
-      cardVerifyKeys, cardVerifyJku, live,
+      cardVerifyKeys, cardVerifyJku, live, sandbox,
     };
   }
 
@@ -328,7 +339,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
     }
     return {
       subcommand, outDir, sse, serverArgv, cardPath, cardUrl,
-      cardVerifyKeys, cardVerifyJku, live,
+      cardVerifyKeys, cardVerifyJku, live, sandbox,
     };
   }
 
@@ -360,6 +371,8 @@ function parseCliArgs(argv: string[]): ParsedArgs {
       sse = a.slice('--sse='.length);
     } else if (a === '--live') {
       live = true;
+    } else if (a === '--sandbox') {
+      sandbox = true;
     } else {
       process.stderr.write(`mcp-fit: unknown option '${a}'. Run 'mcp-fit help'.\n`);
       process.exit(1);
@@ -371,7 +384,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
 
   return {
     subcommand, outDir, sse, serverArgv, cardPath, cardUrl,
-    cardVerifyKeys, cardVerifyJku, live,
+    cardVerifyKeys, cardVerifyJku, live, sandbox,
   };
 }
 
@@ -379,11 +392,12 @@ function parseCliArgs(argv: string[]): ParsedArgs {
 // Transport resolver
 // ---------------------------------------------------------------------------
 
-function resolveTransport(
+async function resolveTransport(
   sse: string | null,
   serverArgv: string[],
   workspace?: DisposableWorkspace,
-): ReturnType<typeof createTransport> & { kind: 'stdio' | 'sse' } {
+  sandbox?: SandboxHandle | null,
+): Promise<ReturnType<typeof createTransport> & { kind: 'stdio' | 'sse' }> {
   if (sse) {
     const t = createTransport({ kind: 'sse', url: sse });
     // tag the transport kind for introspect()
@@ -407,13 +421,36 @@ function resolveTransport(
   // The cwd is deliberately left alone: the operator names the server with
   // paths relative to their own directory, including in ARGUMENTS, which
   // cannot be rewritten safely. That note lives on createDisposableWorkspace.
+  // When an OS sandbox is available, it rewrites the spawn into a wrapped
+  // argv/env. When it is not, the command is spawned as before with only a
+  // disposable HOME. Either way the containment self-test decides the posture
+  // — being wrapped is not itself evidence of being contained.
+  let spawnCommand = command!;
+  let spawnArgs = [...args];
+  let spawnEnv: Record<string, string> | undefined =
+    workspace !== undefined
+      ? ({ ...process.env, HOME: workspace.home } as Record<string, string>)
+      : undefined;
+
+  if (sandbox != null && workspace !== undefined) {
+    const wrapped = await sandbox.wrap(command!, args, workspace.home);
+    if (wrapped !== null && wrapped.argv.length > 0) {
+      spawnCommand = wrapped.argv[0] as string;
+      spawnArgs = wrapped.argv.slice(1);
+      spawnEnv = { ...(wrapped.env as Record<string, string>), HOME: workspace.home };
+    } else {
+      process.stderr.write(
+        'mcp-fit: sandbox wrapping failed; falling back to an unwrapped spawn. The ' +
+          'containment self-test will report the posture that actually applies.\n',
+      );
+    }
+  }
+
   const t = createTransport({
     kind: 'stdio',
-    command: command!,
-    args,
-    ...(workspace !== undefined
-      ? { env: { ...process.env, HOME: workspace.home } as Record<string, string> }
-      : {}),
+    command: spawnCommand,
+    args: spawnArgs,
+    ...(spawnEnv !== undefined ? { env: spawnEnv } : {}),
   });
   return Object.assign(t, { kind: 'stdio' as const });
 }
@@ -439,8 +476,26 @@ async function cmdScan(opts: ParsedArgs): Promise<void> {
   const canary = workspace ? plantCanary(workspace.home) : undefined;
   const transcript = new Transcript(canary);
 
+  // Optional OS sandbox. Absent, unsupported or failed-to-start all fall back
+  // to the unwrapped spawn — reported, never silent.
+  // Opt-in only. The wiring is complete and the read-deny profile is verified,
+  // but the profile is not yet calibrated to let real toolchains start (see
+  // sandbox-runtime.ts). Enabling it by default would mean installing an
+  // optional dependency silently broke the scanner.
+  const sandbox = workspace && opts.sandbox ? await loadSandbox(workspace.home) : null;
+  if (sandbox !== null) process.stderr.write(`mcp-fit: ${sandbox.detail}\n`);
+
+  // The self-test runs through the SAME wrapper the server gets. Probing an
+  // unwrapped process would measure the CLI's own reachability and report
+  // `none` even when the sandbox works.
   const containment = workspace
-    ? await checkContainment({ home: workspace.home, cwd: workspace.cwd })
+    ? await checkContainment({
+        home: workspace.home,
+        cwd: workspace.cwd,
+        ...(sandbox?.handle != null
+          ? { wrap: (c, a, cw) => sandbox.handle!.wrap(c, a, cw) }
+          : {}),
+      })
     : undefined;
   transcript.record(
     'note',
@@ -466,7 +521,7 @@ async function cmdScan(opts: ParsedArgs): Promise<void> {
     );
   }
 
-  const transport = resolveTransport(sse, serverArgv, workspace);
+  const transport = await resolveTransport(sse, serverArgv, workspace, sandbox?.handle ?? null);
   const transportKind = transport.kind;
 
   process.stderr.write(`mcp-fit: connecting to server (${transportKind})...\n`);
@@ -511,6 +566,9 @@ async function cmdScan(opts: ParsedArgs): Promise<void> {
     // done and actually measured — never from what was intended.
     await emitCompat(scorecard, compatPath, {
       disposableHome: workspace !== undefined,
+      // Naming the mechanism does NOT assert it worked — a failed self-test
+      // still forces the posture to `none`. See report/emit.ts.
+      ...(sandbox?.handle != null ? { osSandbox: sandbox.handle.mechanism } : {}),
       ...(containment !== undefined ? { selfTestVerified: containment.contained } : {}),
     });
     await emitEvals([], evalsPath); // no eval traces in scan-only mode
@@ -682,7 +740,7 @@ async function cmdCard(opts: ParsedArgs): Promise<void> {
 async function cmdFix(opts: ParsedArgs): Promise<void> {
   const { outDir, sse, serverArgv } = opts;
 
-  const transport = resolveTransport(sse, serverArgv);
+  const transport = await resolveTransport(sse, serverArgv);
   const transportKind = transport.kind;
 
   process.stderr.write(`mcp-fit: connecting to server (${transportKind})...\n`);
