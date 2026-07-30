@@ -115,7 +115,14 @@ The system MUST run a synthetic task corpus through a real agent harness against
   - AND tool names matching known host-capability patterns are denied
   - AND the run reports the isolation that ACTUALLY applied, in `compat.json`'s `isolationPosture`
   - AND that posture is `none` while the filter remains in-process: it shares the host's PID, filesystem, network and user, so a hostile tool under an unrecognised name is not contained, and the spawned server process is not constrained at all
-  - NOTE this scenario previously asserted the agent gets "never the host's real capabilities". The code has never delivered that, and the promise is not restored by wording — it becomes true only when an OS-level sandbox lands, at which point the posture value rises to match.
+  - NOTE this scenario previously asserted the agent gets "never the host's real capabilities". The code has never delivered that by DEFAULT, and the promise is not restored by wording.
+- Scenario: optional OS sandbox (`--sandbox`)
+  - GIVEN the optional sandbox-runtime dependency is installed and the platform supports it
+  - WHEN a scan is run with `--sandbox`
+  - THEN the target is wrapped in an OS sandbox and the containment self-test is run THROUGH that same wrapper
+  - AND when the self-test passes, `isolationPosture.level` is `namespace`; when it fails or the sandbox is absent, unsupported or fails to start, the level is `none` and the reason is named
+  - AND the sandbox being PRESENT is never itself treated as evidence of containment — the self-test decides, so a silently-degraded sandbox still reports `none`
+  - AND verification to date covers macOS only; Linux and Windows are unverified and the run reports whatever it measures there rather than assuming success
 - Scenario: outbound destination guard (security)
   - GIVEN a URL chosen by untrusted input (a `--url` target, or a `jku` read from inside the card being scored)
   - WHEN mcp-fit fetches it

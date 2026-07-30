@@ -138,6 +138,39 @@ canonicalization the verifier applies — the two cannot drift. See
 > lane — `card`, the verify flags, and the signing library are on `main` and
 > will ship in the next release. Until then, use the clone-based commands above.
 
+### Sandboxing a scanned server (`--sandbox`)
+
+Scanning an untrusted MCP server means **running it** — the default `scan` path
+spawns the process and completes the MCP handshake before anything is scored.
+By default that process gets a disposable `HOME` and nothing more: it runs as
+you, and absolute paths still resolve. Every `compat.json` records what actually
+applied in `isolationPosture`, and by default that reads `none`.
+
+Install the optional dependency and pass `--sandbox` to wrap the target in a
+real OS sandbox:
+
+```bash
+npm install @anthropic-ai/sandbox-runtime
+mcp-fit scan --sandbox -- node my-server.js
+```
+
+With it, credential paths (`~/.ssh`, `~/.aws`, `~/.npmrc`, …) are unreadable to
+the target and network access is denied. On macOS the containment self-test then
+passes and the posture rises to `namespace`.
+
+Three things worth knowing:
+
+- **Presence is not proof.** A containment probe runs in the same wrapped
+  context the server gets, and the posture reflects what that probe measured. A
+  sandbox that is installed but silently degraded still reports `none`.
+- **`--live`** (the LLM-driven eval harness) is refused outright when
+  containment is absent, so on a machine without the sandbox it will decline
+  rather than hand a model an uncontained server.
+- **Verified on macOS.** Linux additionally needs `bubblewrap` and `socat` from
+  your package manager; Linux and Windows are not yet verified here. On any
+  platform where the sandbox cannot start, mcp-fit falls back to the default
+  path and says why — it does not pretend.
+
 ### Outbound destinations
 
 Two of `mcp-fit`'s requests go to a URL chosen by something other than you:
