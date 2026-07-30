@@ -102,12 +102,15 @@ OPTIONS
                 (crypto-pinned tier — the trust anchor, ADR-F4).
   --verify-jku  card only: also fetch the header jku JWKS (crypto-jku tier;
                 network opt-in — proves integrity + key possession, NOT provenance).
-  --sandbox     scan/fix only: EXPERIMENTAL. Wrap the scanned server in an OS
-                sandbox via the optional @anthropic-ai/sandbox-runtime dep.
-                Off by default and NOT yet calibrated: the read-deny profile is
-                verified, but real Node toolchains can fail to start under it.
-                Whatever happens, the containment self-test decides the reported
-                posture — enabling this never asserts containment by itself.
+  --sandbox     scan/fix only: wrap the scanned server in an OS sandbox via the
+                optional @anthropic-ai/sandbox-runtime dependency. Off by
+                default because it needs that dependency (and, on Linux,
+                bubblewrap + socat from a system package manager).
+                Verified on macOS: with it the containment self-test passes
+                and the reported isolationPosture rises to 'namespace'; without
+                it the posture is 'none'. Enabling this never ASSERTS
+                containment - the self-test still decides, so a sandbox that
+                silently degrades is reported as 'none' anyway.
   --live        scan/fix only: run the LLM-driven eval harness, letting a model
                 make tool CALLS against the target.
                 THIS IS NOT AN EXECUTION GATE. A plain scan already spawns the
@@ -251,7 +254,7 @@ interface ParsedArgs {
   cardVerifyKeys: string | null;
   /** card: opt into fetching the header jku JWKS (crypto-jku tier, network). */
   cardVerifyJku: boolean;
-  /** scan/fix: opt into the OS sandbox (EXPERIMENTAL — profile not yet calibrated). */
+  /** scan/fix: opt into the OS sandbox (optional dependency; raises the measured posture). */
   sandbox: boolean;
   /**
    * scan/fix: opt into the LLM-driven eval harness.
@@ -478,10 +481,9 @@ async function cmdScan(opts: ParsedArgs): Promise<void> {
 
   // Optional OS sandbox. Absent, unsupported or failed-to-start all fall back
   // to the unwrapped spawn — reported, never silent.
-  // Opt-in only. The wiring is complete and the read-deny profile is verified,
-  // but the profile is not yet calibrated to let real toolchains start (see
-  // sandbox-runtime.ts). Enabling it by default would mean installing an
-  // optional dependency silently broke the scanner.
+  // Opt-in: it needs an optional dependency, and on Linux system packages
+  // besides. When present it raises the measured posture to `namespace`;
+  // when absent everything falls back to the disposable-HOME path and says so.
   const sandbox = workspace && opts.sandbox ? await loadSandbox(workspace.home) : null;
   if (sandbox !== null) process.stderr.write(`mcp-fit: ${sandbox.detail}\n`);
 

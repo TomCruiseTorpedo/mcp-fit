@@ -93,27 +93,45 @@ export const DENY_READ_PATHS: readonly string[] = [
 ];
 
 /**
+ * The temp directory SRT gives the sandboxed child.
+ *
+ * Derived exactly as SRT does it (`sandbox-utils.js`): it overrides the child's
+ * `TMPDIR` to `CLAUDE_CODE_TMPDIR || CLAUDE_TMPDIR || /tmp/claude`. The profile
+ * has to name that same directory, because anything the target writes to
+ * `os.tmpdir()` lands there — including the unix sockets Node toolchains use
+ * for IPC.
+ */
+export function sandboxTmpDir(): string {
+  return process.env['CLAUDE_CODE_TMPDIR'] ?? process.env['CLAUDE_TMPDIR'] ?? '/tmp/claude';
+}
+
+/**
  * Settings handed to SRT for a scan. Network is denied outright.
  *
- * ⚠️ NOT YET CALIBRATED FOR REAL SERVERS — this is why `--sandbox` is opt-in.
+ * TWO THINGS THIS PROFILE GETS RIGHT THAT ARE EASY TO GET WRONG.
  *
- * The read-deny half is verified: with `denyRead` set, mcp-fit's own probe
- * reports `contained: true` where the SRT default leaves `/etc/hosts`,
- * `~/.ssh` and `~/.aws` readable. That part works.
+ * 1. `denyRead` is REQUIRED. SRT's default restricts writes and network but
+ *    NOT reads — measured: `/etc/hosts`, `~/.ssh` and `~/.aws` all stayed
+ *    readable inside a default sandbox. With `denyRead` set, mcp-fit's own
+ *    probe reports `contained: true`. Do not delete these believing the
+ *    defaults cover them.
  *
- * The RUN half does not yet. A Node toolchain target (`tsx`) fails with
- * `EPERM` binding its IPC unix socket under this profile, and three attempts
- * did not resolve it — widening `allowWrite` to the temp dirs, scoping
- * `allowUnixSockets` to `/tmp/**`, and enabling `allowLocalBinding` each left
- * it failing. The remaining suspects are macOS `/tmp` → `/private/tmp` symlink
- * resolution inside Seatbelt, and whether SRT's unix-socket path patterns
- * apply to `bind` as well as `connect`.
+ * 2. `allowUnixSockets` must name the sandbox temp dir as a BARE DIRECTORY
+ *    PATH, not a glob. Node toolchains bind a unix socket for IPC under
+ *    `os.tmpdir()`, and SRT rewrites the child's `TMPDIR` (see
+ *    `sandboxTmpDir`). Measured, because the failure is opaque — the target
+ *    dies with `EPERM` on `listen` before it can be introspected:
  *
- * This is the cost originally flagged for D2 and then wrongly downgraded after
- * `denyRead` worked: choosing what to DENY is easy; making legitimate servers
- * still start is the hard half. Until it is settled, a profile that prevents
- * the target from launching is a broken scanner, not a contained one — which
- * is why nothing here runs unless the operator asks for it.
+ *      allowUnixSockets: []                    EPERM
+ *      allowUnixSockets: ['/tmp/**']           EPERM   (glob does not match)
+ *      allowUnixSockets: ['/tmp/claude/**']    EPERM   (glob does not match)
+ *      allowLocalBinding: true, sockets []     EPERM   (governs TCP, not this)
+ *      allowUnixSockets: ['/tmp/claude']       OK      <- bare path
+ *      allowAllUnixSockets: true               OK      but opens docker.sock
+ *
+ *    The bare path is used rather than `allowAllUnixSockets` so that sockets
+ *    like `/var/run/docker.sock` stay blocked; opening those would trade a
+ *    credential-read risk for a container-escape one.
  */
 export function sandboxProfile(home: string): Record<string, unknown> {
   return {
@@ -122,29 +140,16 @@ export function sandboxProfile(home: string): Record<string, unknown> {
       // us. Anything it does need, it can be granted deliberately later.
       allowedDomains: [],
       deniedDomains: [],
-      // Node toolchains use unix-domain sockets for IPC — `tsx` creates one
-      // per run — and SRT blocks unix sockets by DEFAULT. Leaving them blocked
-      // makes real servers fail to start at all, which is a broken scanner
-      // rather than a contained one. Scoped to temp dirs, not opened globally,
-      // so things like /var/run/docker.sock stay blocked.
-      allowUnixSockets: ['/tmp/**', '/private/tmp/**', '/var/folders/**'],
+      // Bare directory path — a glob here silently fails to match for bind.
+      allowUnixSockets: [sandboxTmpDir()],
       allowLocalBinding: false,
     },
     filesystem: {
       denyRead: [...DENY_READ_PATHS],
       allowRead: [],
-      // Writes: the disposable HOME, the cwd, and /tmp.
-      //
-      // /tmp is NOT optional and was learned the hard way — a first attempt
-      // confined writes to the disposable HOME alone and real toolchains
-      // failed immediately (`tsx` could not create its IPC pipe, so the scan
-      // died before it introspected anything). A profile so tight that
-      // legitimate servers cannot start makes the scanner useless, and a
-      // scanner that reports failures which are not failures gets ignored.
-      //
-      // The security value here is in denyRead, not in write confinement: the
-      // threat is a server harvesting credentials, and credentials are read.
-      allowWrite: [home, '.', '/tmp', '/private/tmp', '/var/folders'],
+      // Writes: disposable HOME, cwd, and the sandbox temp dir. The security
+      // value here is denyRead — credentials are READ — not write confinement.
+      allowWrite: [home, '.', sandboxTmpDir()],
       denyWrite: [],
     },
   };

@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { DENY_READ_PATHS, loadSandbox, sandboxProfile } from '../sandbox-runtime.js';
+import { DENY_READ_PATHS, loadSandbox, sandboxProfile, sandboxTmpDir } from '../sandbox-runtime.js';
 
 const HOME = '/tmp/fake-home';
 
@@ -26,14 +26,32 @@ describe('sandboxProfile', () => {
     expect(denyRead).toContain('/etc');
   });
 
-  it('permits writes to the disposable HOME, cwd and temp dirs', () => {
-    // /tmp is not optional: a first attempt confined writes to the disposable
-    // HOME alone and real toolchains could not start. The security value here
-    // is denyRead — credentials are READ — not write confinement.
+  it('permits writes to the disposable HOME, cwd and the SANDBOX temp dir', () => {
+    // The sandbox temp dir is not optional: SRT rewrites the child's TMPDIR,
+    // and a first attempt that omitted it left real toolchains unable to start.
+    // The security value here is denyRead — credentials are READ — not write
+    // confinement.
     const fs = sandboxProfile(HOME)['filesystem'] as Record<string, unknown>;
     const allowWrite = fs['allowWrite'] as string[];
     expect(allowWrite).toContain(HOME);
-    expect(allowWrite).toContain('/tmp');
+    expect(allowWrite).toContain(sandboxTmpDir());
+  });
+
+  it('allows unix sockets at the sandbox temp dir as a BARE PATH, not a glob', () => {
+    // Measured: a glob (`/tmp/**`, `/tmp/claude/**`) silently fails to match
+    // for bind, so Node toolchains die with EPERM on listen before they can be
+    // introspected. The bare directory path works.
+    const net = sandboxProfile(HOME)['network'] as Record<string, unknown>;
+    const socks = net['allowUnixSockets'] as string[];
+    expect(socks).toEqual([sandboxTmpDir()]);
+    expect(socks.some((p) => p.includes('*'))).toBe(false);
+  });
+
+  it('does NOT open all unix sockets — docker.sock must stay blocked', () => {
+    // allowAllUnixSockets also fixes the bind, but trades a credential-read
+    // risk for a container-escape one.
+    const net = sandboxProfile(HOME)['network'] as Record<string, unknown>;
+    expect(net['allowAllUnixSockets']).toBeUndefined();
   });
 
   it('allows no network by default', () => {
@@ -152,5 +170,16 @@ describe('loadSandbox — success path', () => {
     const result = await loadSandbox(HOME, () => Promise.resolve(workingManager(capture)));
     expect(result.handle!.mechanism).toMatch(/sandbox-runtime/);
     expect(result.detail).toMatch(/verified independently/i);
+  });
+});
+
+describe('sandboxTmpDir', () => {
+  it('mirrors how SRT itself derives the child TMPDIR', () => {
+    // SRT sets TMPDIR to CLAUDE_CODE_TMPDIR || CLAUDE_TMPDIR || /tmp/claude.
+    // The profile must name the SAME directory or the allowUnixSockets entry
+    // points somewhere the child never uses.
+    const expected =
+      process.env['CLAUDE_CODE_TMPDIR'] ?? process.env['CLAUDE_TMPDIR'] ?? '/tmp/claude';
+    expect(sandboxTmpDir()).toBe(expected);
   });
 });

@@ -30,6 +30,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /** Outcome of one probe. `null` means the probe could not be run at all. */
 export interface ContainmentProbe {
@@ -121,8 +124,19 @@ export async function checkContainment(
     PATH: process.env['PATH'] ?? '',
     ...(home !== undefined ? { HOME: home } : {}),
   };
+  // The probe goes to a FILE rather than `node -e <source>`.
+  //
+  // A sandbox wrapper takes a command STRING and re-parses it, so a multi-line
+  // program passed via `-e` gets mangled by the quoting round-trip and the
+  // probe silently fails to run — which this module then correctly, but
+  // uselessly, reports as "not contained". A file path is a single token that
+  // survives any wrapper.
+  const probeDir = mkdtempSync(join(tmpdir(), 'mcp-fit-probe-'));
+  const probeFile = join(probeDir, 'probe.cjs');
+  writeFileSync(probeFile, PROBE_SOURCE, 'utf8');
+
   let spawnCommand = nodePath;
-  let spawnArgs: string[] = ['-e', PROBE_SOURCE];
+  let spawnArgs: string[] = [probeFile];
 
   // Run the probe through the SAME wrapper the target server gets, so what it
   // reports is the containment the server will actually experience.
@@ -168,6 +182,8 @@ export async function checkContainment(
     }, timeoutMs);
     timer.unref?.();
   });
+
+  rmSync(probeDir, { recursive: true, force: true });
 
   if (raw === null || raw.trim() === '') {
     return {
