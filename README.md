@@ -135,8 +135,9 @@ canonicalization the verifier applies — the two cannot drift. See
 `docs/adr/ADR-F-a2a-card-scoring.md`.
 
 > **npm note:** the published `mcp-fit` package (0.1.1) predates the A2A card
-> lane — `card`, the verify flags, and the signing library are on `main` and
-> will ship in the next release. Until then, use the clone-based commands above.
+> lane, the outbound destination guard and `--sandbox` — `card`, the verify flags,
+> the signing library and those two are on `main` and will ship in 0.2.0. Until
+> then, use the clone-based commands above.
 
 ### Sandboxing a scanned server (`--sandbox`)
 
