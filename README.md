@@ -218,6 +218,7 @@ mcp-fit fix  [--out <dir>] --sse <url>
 mcp-fit card <path/to/agent-card.json> [--out <dir>] [--verify-keys <jwks.json>] [--verify-jku]
 mcp-fit card --url <url> [--out <dir>] [--verify-keys <jwks.json>] [--verify-jku]
 mcp-fit help
+mcp-fit --version
 ```
 
 | Option | Default | Description |
@@ -227,6 +228,7 @@ mcp-fit help
 | `--url <url>` | — | `card` only: fetch a live Agent Card (explicit network opt-in; loopback and private destinations refused — score a local agent via the file form) |
 | `--verify-keys <jwks.json>` | — | `card` only: verify signatures against a trusted JWKS (`crypto-pinned` tier) |
 | `--verify-jku` | off | `card` only: also fetch the header `jku` JWKS (`crypto-jku` tier; network opt-in) |
+| `--version`, `-v` | — | Print the installed version (just the number) and exit 0. Replaces the subcommand; read from `package.json` at runtime |
 
 ## Scorecard axes
 

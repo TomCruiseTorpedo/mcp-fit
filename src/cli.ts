@@ -7,6 +7,9 @@
  *   card   Score an A2A Agent Card JSON (offline; --url gates network fetch).
  *   help   Show usage.
  *
+ * Flags (first argument only):
+ *   --version, -v   Print the package version (just the number) and exit 0.
+ *
  * Usage (stdio server):
  *   mcp-fit scan [--out <dir>] -- <command> [args...]
  *   mcp-fit fix  [--out <dir>] -- <command> [args...]
@@ -83,6 +86,7 @@ USAGE
   mcp-fit card <path/to/agent-card.json> [--out <dir>] [--verify-keys <jwks.json>] [--verify-jku]
   mcp-fit card --url <url> [--out <dir>] [--verify-keys <jwks.json>] [--verify-jku]
   mcp-fit help
+  mcp-fit --version
 
 SUBCOMMANDS
   scan   Connect, lint, score, and emit compat.json to --out directory.
@@ -91,6 +95,8 @@ SUBCOMMANDS
   help   Show this message.
 
 OPTIONS
+  --version, -v Print the version number and exit. Takes the place of
+                the subcommand.
   --out <dir>   Output directory for compat.json (and evals.jsonl).  [default: .]
   --sse <url>   Use SSE transport to the given URL instead of spawning a process.
   --url <url>   card only: fetch a live Agent Card over HTTPS (explicit network
@@ -241,7 +247,7 @@ function renderScorecard(scorecard: Scorecard): string {
 // ---------------------------------------------------------------------------
 
 interface ParsedArgs {
-  subcommand: 'scan' | 'fix' | 'card' | 'help';
+  subcommand: 'scan' | 'fix' | 'card' | 'help' | 'version';
   outDir: string;
   sse: string | null;
   /** The spawned-server argv (everything after `--`). */
@@ -293,6 +299,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
   else if (sub === 'fix') subcommand = 'fix';
   else if (sub === 'card') subcommand = 'card';
   else if (sub === 'help' || sub === '--help' || sub === '-h') subcommand = 'help';
+  else if (sub === '--version' || sub === '-v') subcommand = 'version';
   else {
     process.stderr.write(`mcp-fit: unknown subcommand '${sub}'. Run 'mcp-fit help'.\n`);
     process.exit(1);
@@ -812,6 +819,10 @@ export async function main(): Promise<void> {
   switch (opts.subcommand) {
     case 'help':
       process.stdout.write(USAGE + '\n');
+      return;
+
+    case 'version':
+      process.stdout.write(CLI_VERSION + '\n');
       return;
 
     case 'scan':
