@@ -48,7 +48,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.1.0",
     "@anthropic-ai/sdk": "^0.102.0",
-    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "ajv": "^8.17.1",
     "canonicalize": "^3.0.0",
     "jose": "^6.2.3",
@@ -60,10 +60,22 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.11"
   },
   "allowScripts": {
     "esbuild@0.21.5": true,
     "fsevents@2.3.3": true
+  },
+  "overrides": {
+    "hono": "^4.13.7",
+    "@hono/node-server": "^1.19.15",
+    "fast-uri": "^3.1.8",
+    "ip-address": "^10.7.1",
+    "qs": "^6.16.0",
+    "proxy-addr": "^2.0.8",
+    "body-parser": "^2.3.0",
+    "nanoid": "^3.3.16",
+    "postcss": "^8.5.23",
+    "source-map-js": "^1.2.2"
   }
 }
