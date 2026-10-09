@@ -174,6 +174,11 @@ The system MUST be runnable via `npx mcp-fit <subcommand>` with a one-command qu
   - GIVEN a fresh environment
   - WHEN a user runs the documented `npx mcp-fit` quickstart against the strawman
   - THEN they get a rendered scorecard with no prior install step
+- Scenario: version flag
+  - GIVEN an installed `mcp-fit`
+  - WHEN a user runs `mcp-fit --version` (or `-v`)
+  - THEN it prints the `package.json` version, and nothing else, and exits 0
+  - AND the `mcp-fit help` banner carries the same version
 
 ### Requirement: A2A Agent Card Scoring
 
