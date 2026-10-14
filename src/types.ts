@@ -24,7 +24,7 @@
 export const COMPAT_SCHEMA_VERSION = '1.0.0';
 
 /** Bump this when the evals.jsonl entry shape changes in a breaking way. */
-export const EVALS_SCHEMA_VERSION = '1.1.0';
+export const EVALS_SCHEMA_VERSION = '1.2.0';
 
 // ---------------------------------------------------------------------------
 // Server metadata
@@ -276,6 +276,9 @@ export interface RubricResult {
  *   (missing rawInput/rawOutput on tool calls, or tool activity that could
  *   not be attributed to the target server). Degraded traces should not
  *   feed before/after claims (ADR-G).
+ * - `isolation`, `subject`, `claims`: ACP harness only (schema 1.2.0, ADR-G8).
+ *   How the driven agent's environment was prepared, which MCP server was
+ *   evaluated and where it came from, and the closed-set claims grade.
  */
 export interface TaskTrace {
   taskId: string;
@@ -287,6 +290,52 @@ export interface TaskTrace {
   provenanceEvents: ProvenanceEvent[];
   rubric: RubricResult;
   degraded?: boolean;
+  isolation?: AgentIsolation;
+  subject?: EvalSubject;
+  claims?: ClaimsGrade;
+}
+
+/**
+ * How a driven agent's environment was prepared (ADR-G8).
+ * - `clean`: a disposable HOME plus an allowlisted environment, carrying only
+ *   the auth the agent declares. The operator's own config, skills, hooks and
+ *   MCP servers are not loaded.
+ * - `inherit`: the operator's full environment and HOME (pre-1.2.0 behaviour).
+ *   Results then describe that operator's setup, not the agent.
+ */
+export type AgentIsolation = 'clean' | 'inherit';
+
+/** The MCP server under evaluation and where it came from (ADR-G8). */
+export type EvalSubject =
+  | { name: string; source: 'command' }
+  | { name: string; source: 'package'; package: string; version: string };
+
+/**
+ * Why one claim failed (ADR-G8).
+ * - `no-manifest`: the reply carried no parseable claims manifest.
+ * - `missing` / `duplicate`: the claim id appeared zero / several times.
+ * - `wrong-value`: the reported value does not match the oracle.
+ * - `unsourced`: the value matches, but no attributed target-tool output
+ *   contains it, so the agent did not demonstrably get it from the server.
+ */
+export type ClaimFailureReason = 'no-manifest' | 'missing' | 'duplicate' | 'wrong-value' | 'unsourced';
+
+/** The grade for one requested claim. */
+export interface ClaimResult {
+  id: string;
+  ok: boolean;
+  reason?: ClaimFailureReason;
+}
+
+/**
+ * Closed-set claims grade (ADR-G8). `extra` lists manifest ids that were not
+ * requested; any extra id fails the task, like a wrong value.
+ */
+export interface ClaimsGrade {
+  total: number;
+  passed: number;
+  results: ClaimResult[];
+  extra: string[];
 }
 
 // ---------------------------------------------------------------------------

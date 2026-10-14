@@ -251,9 +251,49 @@ transcript by observing `tool_call`/`tool_call_update` session updates
   - THEN `degraded` is true
 - Scenario: no-contact detection
   - GIVEN an agent that never issues a tool call
+  - AND a task that does not set `expectNoToolCalls`
   - WHEN the trace is emitted
   - THEN `pass` is false AND `degraded` is true
 - Scenario: headless permissions
   - GIVEN an agent that raises `session/request_permission`
   - WHEN the harness answers
   - THEN the `allow_once`-kind option is preferred and the grant is logged
+- Scenario: agent client isolation (ADR-G8)
+  - GIVEN the default `clean` isolation
+  - WHEN the agent is spawned
+  - THEN its HOME and XDG directories point into a disposable home that is
+    removed after the run
+  - AND its environment holds only the allowlist (PATH, LOGNAME, SHELL, TERM,
+    USER, LANG, LC_ALL, TMPDIR), the agent's declared auth variables, and
+    `agent.env`
+  - AND the trace records `isolation: "clean"`
+  - AND under `inherit` the agent receives the operator's full environment
+    and HOME, and the trace records `isolation: "inherit"`
+- Scenario: required credentials fail fast (ADR-G8)
+  - GIVEN an agent whose `auth.required` is true under `clean` isolation
+  - AND none of its declared auth variables is set and no auth file exists
+  - WHEN a task runs
+  - THEN `AcpHarnessError` is thrown before the agent is spawned
+- Scenario: published-package subject (ADR-G8)
+  - GIVEN a target built by `targetFromPackage(pkg, version)`
+  - WHEN a task runs
+  - THEN the agent launches the server as `npx --yes <pkg>@<version>`
+  - AND the trace records `subject` with `source: "package"`, the package
+    and the exact version
+  - AND a range, dist-tag or build-metadata version is rejected
+- Scenario: zero-call negative scenario (ADR-G8)
+  - GIVEN a task with `expectNoToolCalls: true`
+  - WHEN the agent makes no tool call
+  - THEN `pass` is true AND the trace is not degraded
+  - AND any tool call makes `pass` false
+  - AND when `expectReplyMatches` is set, the reply must match it as well
+- Scenario: closed-set claims manifest (ADR-G8)
+  - GIVEN a task with `claims` (id, question, expected value)
+  - WHEN the prompt is built
+  - THEN it lists claim ids and questions but never an expected value
+  - AND WHEN the trace is emitted, each claim passes only if it appears in
+    the reply's last `{"claims": [...]}` block exactly once, equals its
+    expected value, and appears in the output of an attributed
+    target-tool call
+  - AND a missing, duplicate, wrong, unsourced or unrequested claim makes
+    `pass` false, and the trace records the grade in `claims`

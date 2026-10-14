@@ -122,6 +122,61 @@ Protocol/spawn failures and timeouts (default 120 s) throw `AcpHarnessError`
 after SIGTERM→SIGKILL on the subprocess — matching ClaudeHarness, which throws
 on API errors. The agent's stderr is passed through to the operator's stderr.
 
+### G8 — Agent isolation, package subjects, negative and claims tasks (2026-10-14, schema 1.2.0)
+
+Status: accepted. Motivation: a cross-vendor scorecard is only comparable if
+each agent runs as a fresh install would. Before G8 the agent was spawned with
+`{ ...process.env, ...agent.env }`, so `claude-agent-acp` loaded the
+operator's own CLAUDE.md, skills, hooks and MCP servers, and a score described
+that operator's setup. The method is adapted from the agent-evaluation lane
+of `morluto/rea` (MIT); no code was copied.
+
+- **Isolation, default `clean`.** The agent gets a disposable HOME
+  (`createDisposableWorkspace`, the helper target servers already use), XDG
+  directories inside it, and an allowlisted environment: the MCP SDK's own
+  stdio allowlist minus HOME, plus LANG, LC_ALL and TMPDIR, plus the agent's
+  declared auth variables, plus `agent.env`. `npm_config_cache` keeps
+  pointing at the operator's npm cache so `npx` agents do not re-download per
+  run; it holds tarballs, not configuration, and `~/.npmrc` stays out.
+  `isolation: 'inherit'` restores the old behaviour, and every trace records
+  which one applied. This isolates CONFIGURATION, not the process: absolute
+  paths still resolve, as for target servers. It is not a sandbox.
+- **Declared auth.** `AcpAgentSpec.auth` names environment variables and
+  HOME-relative files (copied with mode 0600). With `required: true`, a clean
+  run with none of them fails before spawning, because a logged-out agent
+  would otherwise surface as a no-contact trace. Measured on macOS
+  2026-10-14: the Claude login lives in the Keychain, and a clean HOME leaves
+  `claude` "Not logged in", so `claude-agent-acp` declares
+  `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `ANTHROPIC_API_KEY`.
+  An end-to-end run of `claude-agent-acp` with the OAuth token has not been
+  done yet.
+- **Package subjects.** `targetFromPackage(pkg, version)` launches a published
+  server the way its users do, `npx --yes <pkg>@<version>`, and accepts exact
+  versions only. The trace's `subject` records the package and version, or
+  `source: "command"` for an operator-supplied command line.
+- **Task fields live in `AcpEvalTask`, not `EvalTask`.** `src/eval/harness.ts`
+  is vendored byte-identically into gatewarden, so the new fields extend
+  `EvalTask` inside `acp-harness.ts`. ClaudeHarness is unaffected; it calls
+  the API directly and has no client configuration to isolate.
+- **Negative scenario.** With `expectNoToolCalls`, zero calls pass and are not
+  degraded, and any call fails. Zero calls alone cannot tell "correctly
+  declined" from "never saw the server" (G4: the connection is SHOULD-strength),
+  so `expectReplyMatches` adds positive evidence, for example a clarifying
+  question.
+- **Claims manifest.** `claims` lists `{id, question, expected}`. The prompt
+  carries ids and questions only. The last `{"claims": [...]}` block in the
+  reply is graded: each claim must appear exactly once, equal its expected
+  value, and appear in the output of an attributed target-tool call, using
+  `classifyProvenance` with the task description excluded. Missing,
+  duplicate, wrong, unsourced and unrequested claims fail the task. Known
+  limit: sourcing is a substring heuristic, so a very short value (`1`,
+  `true`) is weakly evidenced.
+- **Contract.** `TaskTrace` gains optional `isolation`, `subject` and
+  `claims`; `EVALS_SCHEMA_VERSION` 1.1.0 → 1.2.0 and
+  `schemas/evals.schema.json` are updated together. Every new rule has a test
+  whose control lands in the opposite bucket, and each implementing line was
+  reverted once to confirm its test goes red.
+
 ## Deferred
 
 `session/load` resumption · terminal/fs callback richness beyond declared-false ·
