@@ -10,8 +10,14 @@
  *   unattributed  tool_call whose title matches no target tool
  *   permission    raises session/request_permission first; proceeds only on allow
  *   hang          answers initialize + session/new, never answers session/prompt
+ *   report-env    happy flow whose rawInput also reports what the agent process
+ *                 can see: HOME, XDG_CONFIG_HOME and MCPFIT_PLANTED_SECRET
+ *   claims        happy flow, then a reply carrying FAKE_ACP_MANIFEST inside a
+ *                 fenced json block, split across two message chunks
  *
  * FAKE_ACP_TITLE overrides the tool_call title (default 'weather_lookup').
+ * FAKE_ACP_OUTPUT (JSON) overrides the tool_call_update rawOutput.
+ * FAKE_ACP_REPLY overrides the no-contact reply text.
  * The mcpServers[0].name received at session/new is echoed back inside
  * rawInput.receivedServer so tests can assert the target server was passed.
  *
@@ -23,6 +29,9 @@ import { createInterface } from 'node:readline';
 
 const MODE = process.env.FAKE_ACP_MODE ?? 'happy';
 const TITLE = process.env.FAKE_ACP_TITLE ?? 'weather_lookup';
+const OUTPUT = process.env.FAKE_ACP_OUTPUT
+  ? JSON.parse(process.env.FAKE_ACP_OUTPUT)
+  : { tempC: 22, source: 'fake' };
 
 let receivedServer = null;
 let initialized = false;
@@ -61,19 +70,26 @@ function toolCallFlow(sessionId) {
   const withRaw = MODE !== 'no-raw';
   const title = MODE === 'unattributed' ? 'Doing something mysterious' : TITLE;
 
+  const rawInput = { city: 'Calgary', receivedServer };
+  if (MODE === 'report-env') {
+    rawInput.seenHome = process.env.HOME ?? null;
+    rawInput.seenXdgConfig = process.env.XDG_CONFIG_HOME ?? null;
+    rawInput.seenPlanted = process.env.MCPFIT_PLANTED_SECRET ?? null;
+  }
+
   sessionUpdate(sessionId, {
     sessionUpdate: 'tool_call',
     toolCallId: 'tc-1',
     title,
     kind: 'fetch',
     status: 'pending',
-    ...(withRaw ? { rawInput: { city: 'Calgary', receivedServer } } : {}),
+    ...(withRaw ? { rawInput } : {}),
   });
   sessionUpdate(sessionId, {
     sessionUpdate: 'tool_call_update',
     toolCallId: 'tc-1',
     status: 'completed',
-    ...(withRaw ? { rawOutput: { tempC: 22, source: 'fake' } } : {}),
+    ...(withRaw ? { rawOutput: OUTPUT } : {}),
   });
 }
 
@@ -87,10 +103,28 @@ async function handlePrompt(id, params) {
     case 'no-contact':
       sessionUpdate(sessionId, {
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: 'No tools needed for this.' },
+        content: { type: 'text', text: process.env.FAKE_ACP_REPLY ?? 'No tools needed for this.' },
       });
       respond(id, { stopReason: 'end_turn' });
       return;
+
+    case 'claims': {
+      toolCallFlow(sessionId);
+      const manifest = process.env.FAKE_ACP_MANIFEST ?? '{"claims": []}';
+      const text = `Done.\n\n\`\`\`json\n${manifest}\n\`\`\`\n`;
+      const half = Math.floor(text.length / 2);
+      // Two chunks, so the harness must concatenate the reply to find the block.
+      sessionUpdate(sessionId, {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: text.slice(0, half) },
+      });
+      sessionUpdate(sessionId, {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: text.slice(half) },
+      });
+      respond(id, { stopReason: 'end_turn' });
+      return;
+    }
 
     case 'permission': {
       const response = await requestClient('session/request_permission', {

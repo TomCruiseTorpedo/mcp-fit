@@ -58,6 +58,17 @@
     "degraded": {
       "type": "boolean",
       "description": "True when the harness could not fully observe the run (optional; absent means false). Degraded traces should not feed before/after claims (ADR-G)."
+    },
+    "isolation": {
+      "type": "string",
+      "enum": ["clean", "inherit"],
+      "description": "ACP harness only (ADR-G8). clean = disposable HOME plus allowlisted environment carrying only the agent's declared auth; inherit = the operator's full environment and HOME, so the result describes that operator's setup."
+    },
+    "subject": {
+      "$ref": "#/$defs/EvalSubject"
+    },
+    "claims": {
+      "$ref": "#/$defs/ClaimsGrade"
     }
   },
   "$defs": {
@@ -101,6 +112,62 @@
           "type": "integer",
           "minimum": 1,
           "description": "Round at which scoring completed — early-stop at 10 or patience exhausted."
+        }
+      }
+    },
+    "EvalSubject": {
+      "description": "ACP harness only (ADR-G8): the MCP server under evaluation and where it came from.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["name", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "source": { "const": "command", "description": "An operator-supplied command line (for example a local build)." }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "source", "package", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "source": { "const": "package", "description": "A published npm package launched the way its users would (npx with an exact version)." },
+            "package": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "ClaimsGrade": {
+      "type": "object",
+      "description": "ACP harness only (ADR-G8): closed-set claims grade. Each requested claim must appear exactly once, match the oracle, and be found in an attributed target-tool output.",
+      "required": ["total", "passed", "results", "extra"],
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "ok"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "ok": { "type": "boolean" },
+              "reason": {
+                "type": "string",
+                "enum": ["no-manifest", "missing", "duplicate", "wrong-value", "unsourced"]
+              }
+            }
+          }
+        },
+        "extra": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Manifest ids that were not requested. Any extra id fails the task."
         }
       }
     }
